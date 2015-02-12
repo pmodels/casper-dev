@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include "mtcore.h"
 #include "mtcore_helper.h"
+#include "mtcore_util.h"
 
 MPI_Comm MTCORE_COMM_USER_WORLD = MPI_COMM_NULL;
 MPI_Comm MTCORE_COMM_LOCAL = MPI_COMM_NULL;
@@ -37,27 +38,24 @@ static int MTCORE_Initialize_env()
 
     memset(&MTCORE_ENV, 0, sizeof(MTCORE_ENV));
 
-    MTCORE_ENV.seg_size = MTCORE_DEFAULT_SEG_SIZE;
-    val = getenv("MTCORE_SEG_SIZE");
-    if (val && strlen(val)) {
-        MTCORE_ENV.seg_size = atoi(val);
-    }
+    MTCORE_ENV.seg_size =  MTU_Getenv_int("MTCORE_SEG_SIZE", MTCORE_DEFAULT_SEG_SIZE);
     if (MTCORE_ENV.seg_size <= 0) {
         fprintf(stderr, "Wrong MTCORE_SEG_SIZE %d\n", MTCORE_ENV.seg_size);
         return -1;
     }
 
-    MTCORE_ENV.num_h = MTCORE_DEFAULT_NUM_HELPER;
-    val = getenv("MTCORE_NUM_HELPER");
-    if (val && strlen(val)) {
-        MTCORE_ENV.num_h = atoi(val);
-    }
+    MTCORE_ENV.num_h = MTU_Getenv_int("MTCORE_NUM_HELPER", MTCORE_DEFAULT_NUM_HELPER);
     if (MTCORE_ENV.num_h <= 0) {
         fprintf(stderr, "Wrong MTCORE_NUM_HELPER %d\n", MTCORE_ENV.num_h);
         return -1;
     }
+
+    /* Jeff: Would it not be better to make a function to query this? 
+     * e.g.
+     * int MTU_Get_param(char * name) { if (name=="MTCORE_NUM_H") return MTCORE_ENV.num_h; } */
     MTCORE_NUM_H = MTCORE_ENV.num_h;    /* expose to outside programs */
 
+    /* Jeff: We need a new MTU_Getenv_foo for this one I guess... */
     MTCORE_ENV.lock_binding = MTCORE_LOCK_BINDING_RANK;
     val = getenv("MTCORE_LOCK_METHOD");
     if (val && strlen(val)) {
