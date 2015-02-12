@@ -23,7 +23,7 @@ int MTU_Getenv_bool(char *varname, int default_value) {
 /* Retrieve the value of an integer environment variable. */
 int MTU_Getenv_int(char *varname, int default_value) {
   char *var = getenv(varname);
-  if (var) 
+  if (val && strlen(val))
     return atoi(var);
   else
     return default_value;
