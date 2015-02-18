@@ -36,6 +36,11 @@ CSP_define_win_cache;
 /* TODO: Move load balancing option into env setting */
 CSP_env_param CSP_ENV;
 
+#ifdef CSP_ENABLE_RUNTIME_MONITOR
+/* local runtime monitor */
+CSP_rm CSP_RM[CSP_RM_MAX_TYPE];
+#endif
+
 static int CSP_initialize_env()
 {
     char *val;
@@ -149,6 +154,9 @@ static int CSP_initialize_env()
 #endif
 #if defined(CSP_ENABLE_RUNTIME_LOAD_OPT)
                        "    RUMTIME_LOAD_OPT (enabled) \n"
+#endif
+#ifdef CSP_ENABLE_RUNTIME_MONITOR
+                       "    RUNTIME_MONITORING (enabled) \n"
 #endif
                        "    CSP_NG = %d \n"
                        "    CSP_LOCK_METHOD = %s \n"
@@ -374,6 +382,7 @@ int MPI_Init_thread(int *argc, char ***argv, int required, int *provided)
                       local_user_nprocs, CSP_MY_NODE_ID);
 
         CSP_init_win_cache();
+        CSP_rm_reset_all();
     }
     /* Ghost processes */
     /* TODO: Ghost process should not run user program */

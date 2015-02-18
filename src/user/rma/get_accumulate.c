@@ -98,6 +98,7 @@ int MPI_Get_accumulate(const void *origin_addr, int origin_count, MPI_Datatype o
     CSP_win *ug_win;
 
     CSP_DBG_PRINT_FCNAME();
+    CSP_rm_count(CSP_RM_COMM_FREQ);
 
     CSP_fetch_ug_win_from_cache(win, ug_win);
 

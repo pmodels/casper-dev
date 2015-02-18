@@ -568,6 +568,7 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     MPI_Info shared_info = MPI_INFO_NULL;
 
     CSP_DBG_PRINT_FCNAME();
+    CSP_rm_count(CSP_RM_COMM_FREQ);
 
     ug_win = CSP_calloc(1, sizeof(CSP_win));
 

@@ -15,6 +15,7 @@ int MPI_Win_test(MPI_Win win, int *flag)
     int post_grp_size = 0;
 
     CSP_DBG_PRINT_FCNAME();
+    CSP_rm_count(CSP_RM_COMM_FREQ);
 
     CSP_fetch_ug_win_from_cache(win, ug_win);
 
