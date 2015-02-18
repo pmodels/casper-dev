@@ -95,6 +95,7 @@ int MPI_Win_start(MPI_Group group, int assert, MPI_Win win)
     int i;
 
     CSP_DBG_PRINT_FCNAME();
+    CSP_rm_count(CSP_RM_COMM_FREQ);
 
     CSP_fetch_ug_win_from_cache(win, ug_win);
 

@@ -66,6 +66,7 @@ int MPI_Win_unlock_all(MPI_Win win)
     int i;
 
     CSP_DBG_PRINT_FCNAME();
+    CSP_rm_count(CSP_RM_COMM_FREQ);
 
     CSP_fetch_ug_win_from_cache(win, ug_win);
 

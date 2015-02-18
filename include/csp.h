@@ -13,6 +13,8 @@
 #include <mpi.h>
 #include <casperconf.h>
 
+#include "rm.h"
+
 /* #define CSP_ENABLE_GRANT_LOCK_HIDDEN_BYTE */
 
 /* #define CSP_ENABLE_LOCAL_LOCK_OPT */

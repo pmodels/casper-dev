@@ -110,6 +110,9 @@ int MPI_Win_post(MPI_Group group, int assert, MPI_Win win)
     int mpi_errno = MPI_SUCCESS;
     int post_grp_size = 0;
 
+    CSP_DBG_PRINT_FCNAME();
+    CSP_rm_count(CSP_RM_COMM_FREQ);
+
     CSP_fetch_ug_win_from_cache(win, ug_win);
 
     if (ug_win == NULL) {

@@ -16,6 +16,7 @@ int MPI_Win_sync(MPI_Win win)
     int i, j;
 
     CSP_DBG_PRINT_FCNAME();
+    /* Skip runtime monitoring since we consider it is a local operation. */
 
     CSP_fetch_ug_win_from_cache(win, ug_win);
 

@@ -188,7 +188,11 @@ while (<INFILE>) {
             }
         }
         print CFILE ")\n{\n";
-
+        
+        # add runtime monitoring
+        # TODO : skip local functions
+        print CFILE "${tab}CSP_rm_count(CSP_RM_COMM_FREQ);\n";
+        
         # check and replace each comm input argument (no *)
         for ($x = 0; $x <= $#arglist; $x++) {
             if (grep/MPI_Comm $/, $arglist[$x]) {
