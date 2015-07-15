@@ -27,7 +27,12 @@ noinst_PROGRAMS = \
 	init_thread_acc	\
 	epoch_type	\
 	epoch_type_assert	\
-	win_allocate_info
+	win_allocate_info	\
+	async_adapt	\
+	async_adapt_local_check
+
+async_adapt_local_check_SOURCES= async_adapt.c
+async_adapt_local_check_CFLAGS = -DUSE_LOCAL_CHECK
 
 MPIEXEC=mpiexec
 
