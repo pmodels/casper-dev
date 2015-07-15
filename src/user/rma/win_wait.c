@@ -91,7 +91,7 @@ int MPI_Win_wait(MPI_Win win)
     int post_grp_size = 0;
 
     CSP_DBG_PRINT_FCNAME();
-    CSP_rm_count(CSP_RM_COMM_FREQ);
+    CSP_rm_count_start(CSP_RM_COMM_FREQ);
 
     CSP_fetch_ug_win_from_cache(win, ug_win);
 
@@ -145,6 +145,7 @@ int MPI_Win_wait(MPI_Win win)
     ug_win->post_group = MPI_GROUP_NULL;
     ug_win->post_ranks_in_win_group = NULL;
 
+    CSP_rm_count_end(CSP_RM_COMM_FREQ);
     return mpi_errno;
 
   fn_fail:

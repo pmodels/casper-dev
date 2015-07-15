@@ -209,7 +209,8 @@ typedef enum {
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
 typedef enum {
     CSP_TARGET_ASYNC_ON = 0,
-    CSP_TARGET_ASYNC_OFF = 1
+    CSP_TARGET_ASYNC_OFF = 1,
+    CSP_TARGET_ASYNC_NONE = 99  /* initial state */
 } CSP_target_async_stat;
 #endif
 
@@ -631,6 +632,9 @@ static inline const char *CSP_get_target_async_stat_name(CSP_target_async_stat a
     case CSP_TARGET_ASYNC_OFF:
         name = "off";
         break;
+    case CSP_TARGET_ASYNC_NONE:
+        name = "none";
+        break;
     }
     return name;
 }
@@ -824,11 +828,13 @@ extern int CSP_recv_pscw_complete_msg(int post_grp_size, CSP_win * ug_win, int b
 extern int CSP_win_release(CSP_win * ug_win);
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-#define CSP_RUNTIME_ASYNC_SCHED_THR_DEFAULT_FREQ (1000ULL)
-extern CSP_target_async_stat CSP_sched_my_async_stat();
+#define CSP_RUNTIME_ASYNC_SCHED_THR_DEFAULT_FREQ (50)
+
+extern void CSP_ra_update_async_stat(CSP_async_config async_config);
+extern CSP_target_async_stat CSP_ra_sched_async_stat();
 
 #else
-#define CSP_sched_my_async_stat() {/*do nothing */}
+#define CSP_ra_sched_async_stat() {/*do nothing */}
 
 #endif /* end of CSP_ENABLE_RUNTIME_ASYNC_SCHED */
 

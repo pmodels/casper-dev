@@ -86,7 +86,7 @@ int MPI_Win_fence(int assert, MPI_Win win)
     int mpi_errno = MPI_SUCCESS;
 
     CSP_DBG_PRINT_FCNAME();
-    CSP_rm_count(CSP_RM_COMM_FREQ);
+    CSP_rm_count_start(CSP_RM_COMM_FREQ);
 
     CSP_fetch_ug_win_from_cache(win, ug_win);
 
@@ -162,6 +162,7 @@ int MPI_Win_fence(int assert, MPI_Win win)
     ug_win->exp_epoch_stat = CSP_WIN_EXP_EPOCH_FENCE;
 
   fn_exit:
+    CSP_rm_count_end(CSP_RM_COMM_FREQ);
     return mpi_errno;
 
   fn_fail:
