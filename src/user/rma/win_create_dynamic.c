@@ -13,7 +13,7 @@ int MPI_Win_create_dynamic(MPI_Info info, MPI_Comm comm, MPI_Win * win)
     int mpi_errno = MPI_SUCCESS;
 
     CSP_DBG_PRINT_FCNAME();
-    CSP_rm_count(CSP_RM_COMM_FREQ);
+    CSP_rm_count_start(CSP_RM_COMM_FREQ);
 
     if (comm == MPI_COMM_WORLD)
         comm = CSP_COMM_USER_WORLD;
@@ -21,5 +21,6 @@ int MPI_Win_create_dynamic(MPI_Info info, MPI_Comm comm, MPI_Win * win)
 
     CSP_WARN_PRINT("called MPI_Win_create_dynamic, no asynchronous progress on win 0x%x\n", *win);
 
+    CSP_rm_count_end(CSP_RM_COMM_FREQ);
     return mpi_errno;
 }

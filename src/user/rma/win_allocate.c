@@ -600,7 +600,7 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     MPI_Info shared_info = MPI_INFO_NULL;
 
     CSP_DBG_PRINT_FCNAME();
-    CSP_rm_count(CSP_RM_COMM_FREQ);
+    CSP_rm_count_start(CSP_RM_COMM_FREQ);
 
     ug_win = CSP_calloc(1, sizeof(CSP_win));
 
@@ -649,6 +649,10 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+    CSP_ra_update_async_stat(ug_win->info_args.async_config);
+#endif
+
     /* If user turns off asynchronous redirection, simply return normal window; */
     if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_OFF)
         goto fn_noasync;
@@ -675,7 +679,7 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     /* If runtime scheduling is enabled for this window, we exchange the
      * asynchronous configure with every target, since its value might be different. */
     if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
-        my_async_stat = CSP_sched_my_async_stat();
+        my_async_stat = CSP_ra_sched_async_stat();
     }
     tmp_gather_cnt++;
 #endif
@@ -885,6 +889,7 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     if (tmp_gather_buf)
         free(tmp_gather_buf);
 
+    CSP_rm_count_end(CSP_RM_COMM_FREQ);
     return mpi_errno;
 
   fn_noasync:

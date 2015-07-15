@@ -11,18 +11,33 @@
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
 
-static CSP_target_async_stat CSP_MY_ASYNC_STAT;
+static CSP_target_async_stat CSP_MY_ASYNC_STAT = CSP_TARGET_ASYNC_NONE;
 
-CSP_target_async_stat CSP_sched_my_async_stat()
+void CSP_ra_update_async_stat(CSP_async_config async_config)
 {
-    double time;
-    unsigned long long freq = 0;
+    switch (async_config) {
+    case CSP_ASYNC_CONFIG_ON:
+        CSP_MY_ASYNC_STAT = CSP_TARGET_ASYNC_ON;
+        break;
+    case CSP_ASYNC_CONFIG_OFF:
+        CSP_MY_ASYNC_STAT = CSP_TARGET_ASYNC_OFF;
+        break;
+    case CSP_ASYNC_CONFIG_AUTO:
+        /* keep original value. */
+        break;
+    }
+}
+
+CSP_target_async_stat CSP_ra_sched_async_stat()
+{
+    double interval;
+    int freq = 0;
 
     CSP_target_async_stat old_stat = CSP_MY_ASYNC_STAT;
 
     /* schedule async config by using dynamic frequency */
-    time = PMPI_Wtime() - CSP_RM[CSP_RM_COMM_FREQ].timer_sta;
-    freq = (unsigned long long) (CSP_RM[CSP_RM_COMM_FREQ].cnt / time);
+    interval = PMPI_Wtime() - CSP_RM[CSP_RM_COMM_FREQ].interval_sta;
+    freq = (CSP_RM[CSP_RM_COMM_FREQ].time / interval * 100);
 
     if (freq >= CSP_ENV.async_sched_thr_h) {
         CSP_MY_ASYNC_STAT = CSP_TARGET_ASYNC_OFF;
@@ -31,14 +46,17 @@ CSP_target_async_stat CSP_sched_my_async_stat()
         CSP_MY_ASYNC_STAT = CSP_TARGET_ASYNC_ON;
     }
 
-    CSP_DBG_PRINT(" my async stat: cnt=%lld, time=%.4f, freq =%lld, %s->%s\n ",
-                  CSP_RM[CSP_RM_COMM_FREQ].cnt, time, freq,
+    CSP_DBG_PRINT(" my async stat: freq=%d(%.4f/%.4f), %s->%s\n ",
+                  freq, CSP_RM[CSP_RM_COMM_FREQ].time,
+                  CSP_RM[CSP_RM_COMM_FREQ].interval_sta,
                   CSP_get_target_async_stat_name(old_stat),
                   CSP_get_target_async_stat_name(CSP_MY_ASYNC_STAT));
 
     if (old_stat != CSP_MY_ASYNC_STAT) {
-        CSP_INFO_PRINT(2, "Sched my async stat: freq =%lld, %s->%s \n",
-                       freq, CSP_get_target_async_stat_name(old_stat),
+        CSP_INFO_PRINT(2, "Sched my async stat: freq =%d(%.4f/%.4f), %s->%s \n",
+                       freq, CSP_RM[CSP_RM_COMM_FREQ].time,
+                       CSP_RM[CSP_RM_COMM_FREQ].interval_sta,
+                       CSP_get_target_async_stat_name(old_stat),
                        CSP_get_target_async_stat_name(CSP_MY_ASYNC_STAT));
     }
 
