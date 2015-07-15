@@ -58,6 +58,19 @@ int MPI_Win_unlock(int target_rank, MPI_Win win)
     PMPI_Comm_rank(ug_win->user_comm, &user_rank);
     target->remote_lock_assert = 0;
 
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+    /* If target is in async-off state, simply lock target on the internal window */
+    if (target->async_stat == CSP_TARGET_ASYNC_OFF) {
+        mpi_errno = PMPI_Win_unlock(target->ug_rank, target->ug_win);
+        if (mpi_errno != MPI_SUCCESS)
+            goto fn_fail;
+
+        CSP_DBG_PRINT("[%d]unlock(ug_win 0x%x, target %d), instead of target rank %d\n",
+                      user_rank, target->ug_win, target->ug_rank, target_rank);
+        goto unlock_done;
+    }
+#endif
+
     /* Unlock all ghost processes in every ug-window of target process. */
 #ifdef CSP_ENABLE_SYNC_ALL_OPT
 
@@ -98,6 +111,10 @@ int MPI_Win_unlock(int target_rank, MPI_Win win)
         target->segs[j].main_lock_stat = CSP_MAIN_LOCK_RESET;
     }
 #endif
+
+  unlock_done:
+    /* This label only used when asynchronous scheduling is enabled. */
+    CSP_ATTRIBUTE((unused));
 
     /* Reset per-target epoch status. */
     target->epoch_stat = CSP_TARGET_NO_EPOCH;

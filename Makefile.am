@@ -10,7 +10,7 @@ lib_LTLIBRARIES = libcasper.la
 include_HEADERS = include/casper.h
 
 libcasper_la_SOURCES = src/mpi_wrap.c	\
-                    src/casper.c	\
+                    src/casper.c \
                     src/user/func.c \
                     src/user/rma/win_allocate.c \
                     src/user/rma/win_create.c \
@@ -46,6 +46,7 @@ libcasper_la_SOURCES = src/mpi_wrap.c	\
                     src/user/rma/csp_get_ghost.c	\
                     src/user/rma/csp_op_segment.c	\
                     src/user/rma/csp_bind_ghost.c	\
+                    src/user/rma/csp_async_sched.c	\
                     src/user/init/init.c \
                     src/user/init/initthread.c \
                     src/user/init/finalize.c \

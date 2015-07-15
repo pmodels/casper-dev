@@ -38,6 +38,20 @@ static int CSP_fence_flush_all(CSP_win * ug_win)
             goto fn_fail;
     }
 
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+    if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
+        /* flush targets which are in async-off state.
+         * Note that, for all-async-off case, RMA goes through normal window. */
+        for (i = 0; i < user_nprocs; i++) {
+            if (ug_win->targets[i].async_stat == CSP_TARGET_ASYNC_OFF) {
+                mpi_errno = PMPI_Win_flush(ug_win->targets[i].ug_rank, ug_win->active_win);
+                if (mpi_errno != MPI_SUCCESS)
+                    goto fn_fail;
+            }
+        }
+    }
+#endif
+
 #ifdef CSP_ENABLE_LOCAL_LOCK_OPT
     mpi_errno = PMPI_Win_flush(ug_win->my_rank_in_ug_comm, ug_win->active_win);
     if (mpi_errno != MPI_SUCCESS)

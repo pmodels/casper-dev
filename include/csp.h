@@ -138,6 +138,9 @@ typedef enum {
 typedef enum {
     CSP_ASYNC_CONFIG_ON = 0,
     CSP_ASYNC_CONFIG_OFF = 1
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+        , CSP_ASYNC_CONFIG_AUTO = 2
+#endif
 } CSP_async_config;
 
 #define CSP_DEFAULT_SEG_SIZE 4096;
@@ -169,8 +172,13 @@ typedef struct CSP_env_param {
 
     int verbose;                /* verbose level. print configuration information. */
     CSP_async_config async_config;
-} CSP_env_param;
 
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+    /* runtime scheduling options for asynchronous progress configuration */
+    unsigned long long async_sched_thr_l;       /* low threshold */
+    unsigned long long async_sched_thr_h;       /* high threshold */
+#endif
+} CSP_env_param;
 
 /* used in runtime load balancing */
 typedef enum {
@@ -197,6 +205,13 @@ typedef enum {
     CSP_WIN_EXP_EPOCH_FENCE,
     CSP_WIN_EXP_EPOCH_PSCW
 } CSP_win_exp_epoch_stat;
+
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+typedef enum {
+    CSP_TARGET_ASYNC_ON = 0,
+    CSP_TARGET_ASYNC_OFF = 1
+} CSP_target_async_stat;
+#endif
 
 typedef enum {
     CSP_FUNC_NULL,
@@ -262,6 +277,7 @@ typedef struct CSP_win_target {
     int local_user_nprocs;
     int world_rank;             /* rank in world communicator */
     int user_world_rank;        /* rank in user world communicator */
+    int ug_rank;                /* rank in user-ghost communicator */
     int node_id;
 
     MPI_Aint wait_counter_offset;       /* counter for complete-wait synchronization. allocated in main ghost. */
@@ -272,7 +288,9 @@ typedef struct CSP_win_target {
     int num_segs;
 
     CSP_target_epoch_stat epoch_stat;   /* indicate which access epoch is opened for the target. */
-
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+    CSP_target_async_stat async_stat;   /*per-target async status when window async config is auto. */
+#endif
 } CSP_win_target;
 
 typedef struct CSP_win {
@@ -602,6 +620,41 @@ static inline const char *CSP_target_get_epoch_stat_name(CSP_win_target * target
     }
 }
 
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+static inline const char *CSP_get_target_async_stat_name(CSP_target_async_stat async_stat)
+{
+    const char *name = "";
+    switch (async_stat) {
+    case CSP_TARGET_ASYNC_ON:
+        name = "on";
+        break;
+    case CSP_TARGET_ASYNC_OFF:
+        name = "off";
+        break;
+    }
+    return name;
+}
+#endif
+
+static inline const char *CSP_get_async_config_name(CSP_async_config async_config)
+{
+    const char *name = "";
+    switch (async_config) {
+    case CSP_ASYNC_CONFIG_ON:
+        name = "on";
+        break;
+    case CSP_ASYNC_CONFIG_OFF:
+        name = "off";
+        break;
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+    case CSP_ASYNC_CONFIG_AUTO:
+        name = "auto";
+        break;
+#endif
+    }
+    return name;
+}
+
 extern int run_g_main(void);
 
 extern int CSP_func_start(CSP_func FUNC, int user_nprocs, int user_local_nprocs);
@@ -769,5 +822,15 @@ extern char wait_flg;
 extern int CSP_recv_pscw_complete_msg(int post_grp_size, CSP_win * ug_win, int blocking, int *flag);
 
 extern int CSP_win_release(CSP_win * ug_win);
+
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+#define CSP_RUNTIME_ASYNC_SCHED_THR_DEFAULT_FREQ (1000ULL)
+extern CSP_target_async_stat CSP_sched_my_async_stat();
+
+#else
+#define CSP_sched_my_async_stat() {/*do nothing */}
+
+#endif /* end of CSP_ENABLE_RUNTIME_ASYNC_SCHED */
+
 
 #endif /* CSP_H_ */

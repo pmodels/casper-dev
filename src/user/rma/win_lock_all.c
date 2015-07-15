@@ -37,6 +37,21 @@ static int CSP_win_mixed_lock_all_impl(int assert, CSP_win * ug_win)
      * Note that a ghost may be used on any window of this process for runtime
      * load balancing whether it is binded to that segment or not. */
     for (i = 0; i < user_nprocs; i++) {
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+        /* only lock target if it is in async-off state.
+         * Note that, for all-async-off case, RMA goes through normal window. */
+        if (ug_win->targets[i].async_stat == CSP_TARGET_ASYNC_OFF) {
+            CSP_DBG_PRINT("[%d]lock(target(%d), ug_win 0x%x), instead of "
+                          "target rank %d\n", user_rank, ug_win->targets[i].ug_rank,
+                          ug_win->targets[i].ug_win, i);
+            mpi_errno = PMPI_Win_lock(MPI_LOCK_SHARED, ug_win->targets[i].ug_rank, assert,
+                                      ug_win->targets[i].ug_win);
+            if (mpi_errno != MPI_SUCCESS)
+                goto fn_fail;
+            continue;
+        }
+#endif
+
         for (k = 0; k < CSP_ENV.num_g; k++) {
             int target_g_rank_in_ug = ug_win->targets[i].g_ranks_in_ug[k];
 
@@ -52,6 +67,13 @@ static int CSP_win_mixed_lock_all_impl(int assert, CSP_win * ug_win)
 #endif
 
     ug_win->is_self_locked = 0;
+
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+    /* If local rank is in async-off state, do not need force self lock */
+    if (ug_win->targets[user_rank].async_stat == CSP_TARGET_ASYNC_OFF) {
+        goto fn_exit;
+    }
+#endif
 
     if (!ug_win->info_args.no_local_load_store &&
         !(ug_win->targets[user_rank].remote_lock_assert & MPI_MODE_NOCHECK)) {

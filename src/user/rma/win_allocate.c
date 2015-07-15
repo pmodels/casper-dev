@@ -54,6 +54,11 @@ static int read_win_info(MPI_Info info, CSP_win * ug_win)
             else if (!strncmp(info_value, "on", strlen("on"))) {
                 ug_win->info_args.async_config = CSP_ASYNC_CONFIG_ON;
             }
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+            else if (!strncmp(info_value, "auto", strlen("auto"))) {
+                ug_win->info_args.async_config = CSP_ASYNC_CONFIG_AUTO;
+            }
+#endif
         }
 
         /* Check if we are allowed to ignore force-lock for local target,
@@ -135,8 +140,7 @@ static int read_win_info(MPI_Info info, CSP_win * ug_win)
                            ((ug_win->info_args.epoch_type & CSP_EPOCH_LOCK) ? "|lock" : ""),
                            ((ug_win->info_args.epoch_type & CSP_EPOCH_PSCW) ? "|pscw" : ""),
                            ((ug_win->info_args.epoch_type & CSP_EPOCH_FENCE) ? "|fence" : ""),
-                           ((ug_win->info_args.async_config ==
-                             CSP_ASYNC_CONFIG_ON) ? "on" : "off"));
+                           CSP_get_async_config_name(ug_win->info_args.async_config));
         }
     }
 
@@ -303,6 +307,7 @@ static int create_communicators(CSP_win * ug_win)
     int num_ghosts = 0, max_num_ghosts;
     int user_nprocs, user_local_rank;
     int *gp_ranks_in_ug = NULL;
+    int *user_ranks_in_ug = NULL;
     int i;
 
     PMPI_Comm_size(ug_win->user_comm, &user_nprocs);
@@ -323,17 +328,21 @@ static int create_communicators(CSP_win * ug_win)
         PMPI_Comm_group(ug_win->local_ug_comm, &ug_win->local_ug_group);
         PMPI_Comm_group(ug_win->ug_comm, &ug_win->ug_group);
 
-        /* -Get all Ghost rank in ug communicator */
+        /* -Get rank of all ghost and user processes in ug communicator */
         memcpy(ug_win->g_ranks_in_ug, CSP_ALL_UNIQUE_G_RANKS_IN_WORLD,
                ug_win->num_g_ranks_in_ug * sizeof(int));
-        for (i = 0; i < user_nprocs; i++)
+        for (i = 0; i < user_nprocs; i++) {
             memcpy(ug_win->targets[i].g_ranks_in_ug,
                    &CSP_ALL_G_RANKS_IN_WORLD[i * CSP_ENV.num_g], sizeof(int) * CSP_ENV.num_g);
+            ug_win->targets[i].ug_rank = CSP_USER_RANKS_IN_WORLD[i];
+        }
     }
     else {
         /* ghost ranks for every user process, used for ghost fetching in epoch */
         gp_ranks_in_world = CSP_calloc(CSP_ENV.num_g * user_nprocs, sizeof(int));
         gp_ranks_in_ug = CSP_calloc(CSP_ENV.num_g * user_nprocs, sizeof(int));
+        user_ranks_in_world = CSP_calloc(user_nprocs, sizeof(int));
+        user_ranks_in_ug = CSP_calloc(user_nprocs, sizeof(int));
 
         /* Gather user rank information */
         mpi_errno = gather_ranks(ug_win, &num_ghosts, gp_ranks_in_world, ug_win->g_ranks_in_ug);
@@ -346,15 +355,16 @@ static int create_communicators(CSP_win * ug_win)
              *  [1:N]: user ranks in comm_world
              *  [N+1:]: ghost ranks in comm_world
              */
+            int *user_ranks_in_world_ptr = NULL;
             int func_param_size = user_nprocs + max_num_ghosts + 1;
             func_params = CSP_calloc(func_param_size, sizeof(int));
 
             func_params[0] = num_ghosts;
 
             /* user ranks in comm_world */
-            user_ranks_in_world = &func_params[1];
+            user_ranks_in_world_ptr = &func_params[1];
             for (i = 0; i < user_nprocs; i++)
-                user_ranks_in_world[i] = ug_win->targets[i].world_rank;
+                user_ranks_in_world_ptr[i] = ug_win->targets[i].world_rank;
 
             /* ghost ranks in comm_world */
             memcpy(&func_params[user_nprocs + 1], ug_win->g_ranks_in_ug, num_ghosts * sizeof(int));
@@ -395,17 +405,29 @@ static int create_communicators(CSP_win * ug_win)
         }
 #endif
 
-        /* Get all Ghost rank in ug communicator */
+        /* Get all ghost rank in ug communicator */
         mpi_errno = PMPI_Group_translate_ranks(CSP_GROUP_WORLD, user_nprocs * CSP_ENV.num_g,
                                                gp_ranks_in_world, ug_win->ug_group, gp_ranks_in_ug);
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
 
+        /* Get all user rank in ug communicator */
+        for (i = 0; i < user_nprocs; i++)
+            user_ranks_in_world[i] = ug_win->targets[i].world_rank;
+
+        mpi_errno = PMPI_Group_translate_ranks(CSP_GROUP_WORLD, user_nprocs,
+                                               user_ranks_in_world, ug_win->ug_group,
+                                               user_ranks_in_ug);
+        if (mpi_errno != MPI_SUCCESS)
+            goto fn_fail;
+
         PMPI_Comm_group(ug_win->local_ug_comm, &ug_win->local_ug_group);
 
-        for (i = 0; i < user_nprocs; i++)
+        for (i = 0; i < user_nprocs; i++) {
             memcpy(ug_win->targets[i].g_ranks_in_ug, &gp_ranks_in_ug[i * CSP_ENV.num_g],
                    sizeof(int) * CSP_ENV.num_g);
+            ug_win->targets[i].ug_rank = user_ranks_in_ug[i];
+        }
     }
 
 #ifdef CSP_DEBUG
@@ -413,6 +435,10 @@ static int create_communicators(CSP_win * ug_win)
         CSP_DBG_PRINT("%d unique g_ranks:\n", ug_win->num_g_ranks_in_ug);
         for (i = 0; i < ug_win->num_g_ranks_in_ug; i++) {
             CSP_DBG_PRINT("\t[%d] %d\n", i, ug_win->g_ranks_in_ug[i]);
+        }
+        CSP_DBG_PRINT("ug_ranks:\n");
+        for (i = 0; i < user_nprocs; i++) {
+            CSP_DBG_PRINT("\t[%d] %d\n", i, ug_win->targets[i].ug_rank);
         }
     }
 #endif
@@ -424,6 +450,10 @@ static int create_communicators(CSP_win * ug_win)
         free(gp_ranks_in_world);
     if (gp_ranks_in_ug)
         free(gp_ranks_in_ug);
+    if (user_ranks_in_world)
+        free(user_ranks_in_world);
+    if (user_ranks_in_ug)
+        free(user_ranks_in_ug);
     return mpi_errno;
 
   fn_fail:
@@ -564,6 +594,8 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     int i;
     void **base_pp = (void **) baseptr;
     MPI_Aint *tmp_gather_buf = NULL;
+    int tmp_gather_cnt = 7;
+
     int tmp_bcast_buf[2];
     MPI_Info shared_info = MPI_INFO_NULL;
 
@@ -618,15 +650,8 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
         goto fn_fail;
 
     /* If user turns off asynchronous redirection, simply return normal window; */
-    if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_OFF) {
-        if (user_comm == MPI_COMM_WORLD)
-            user_comm = CSP_COMM_USER_WORLD;
-
-        mpi_errno = PMPI_Win_allocate(size, disp_unit, info, user_comm, baseptr, win);
-        CSP_DBG_PRINT("User turns off async in win_allocate, return normal win 0x%x\n", *win);
-
+    if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_OFF)
         goto fn_noasync;
-    }
 
     PMPI_Comm_group(user_comm, &ug_win->user_group);
     PMPI_Comm_size(user_comm, &user_nprocs);
@@ -643,28 +668,47 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
         ug_win->targets[i].g_ranks_in_ug = CSP_calloc(CSP_ENV.num_g, sizeof(MPI_Aint));
     }
 
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+    CSP_target_async_stat my_async_stat = CSP_TARGET_ASYNC_ON;
+    int all_targets_async_off = 1;
+
+    /* If runtime scheduling is enabled for this window, we exchange the
+     * asynchronous configure with every target, since its value might be different. */
+    if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
+        my_async_stat = CSP_sched_my_async_stat();
+    }
+    tmp_gather_cnt++;
+#endif
+
     /* Gather users' disp_unit, size, ranks and node_id */
-    tmp_gather_buf = CSP_calloc(user_nprocs * 7, sizeof(MPI_Aint));
-    tmp_gather_buf[7 * user_rank] = (MPI_Aint) disp_unit;
-    tmp_gather_buf[7 * user_rank + 1] = size;   /* MPI_Aint, size in bytes */
-    tmp_gather_buf[7 * user_rank + 2] = (MPI_Aint) user_local_rank;
-    tmp_gather_buf[7 * user_rank + 3] = (MPI_Aint) world_rank;
-    tmp_gather_buf[7 * user_rank + 4] = (MPI_Aint) user_world_rank;
-    tmp_gather_buf[7 * user_rank + 5] = (MPI_Aint) ug_win->node_id;
-    tmp_gather_buf[7 * user_rank + 6] = (MPI_Aint) user_local_nprocs;
+    tmp_gather_buf = calloc(user_nprocs * tmp_gather_cnt, sizeof(MPI_Aint));
+    tmp_gather_buf[tmp_gather_cnt * user_rank] = (MPI_Aint) disp_unit;
+    tmp_gather_buf[tmp_gather_cnt * user_rank + 1] = size;      /* MPI_Aint, size in bytes */
+    tmp_gather_buf[tmp_gather_cnt * user_rank + 2] = (MPI_Aint) user_local_rank;
+    tmp_gather_buf[tmp_gather_cnt * user_rank + 3] = (MPI_Aint) world_rank;
+    tmp_gather_buf[tmp_gather_cnt * user_rank + 4] = (MPI_Aint) user_world_rank;
+    tmp_gather_buf[tmp_gather_cnt * user_rank + 5] = (MPI_Aint) ug_win->node_id;
+    tmp_gather_buf[tmp_gather_cnt * user_rank + 6] = (MPI_Aint) user_local_nprocs;
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+    tmp_gather_buf[tmp_gather_cnt * user_rank + 7] = (MPI_Aint) my_async_stat;
+#endif
 
     mpi_errno = PMPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL,
-                               tmp_gather_buf, 7, MPI_AINT, user_comm);
+                               tmp_gather_buf, tmp_gather_cnt, MPI_AINT, user_comm);
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
     for (i = 0; i < user_nprocs; i++) {
-        ug_win->targets[i].disp_unit = (int) tmp_gather_buf[7 * i];
-        ug_win->targets[i].size = tmp_gather_buf[7 * i + 1];
-        ug_win->targets[i].local_user_rank = (int) tmp_gather_buf[7 * i + 2];
-        ug_win->targets[i].world_rank = (int) tmp_gather_buf[7 * i + 3];
-        ug_win->targets[i].user_world_rank = (int) tmp_gather_buf[7 * i + 4];
-        ug_win->targets[i].node_id = (int) tmp_gather_buf[7 * i + 5];
-        ug_win->targets[i].local_user_nprocs = (int) tmp_gather_buf[7 * i + 6];
+        ug_win->targets[i].disp_unit = (int) tmp_gather_buf[tmp_gather_cnt * i];
+        ug_win->targets[i].size = tmp_gather_buf[tmp_gather_cnt * i + 1];
+        ug_win->targets[i].local_user_rank = (int) tmp_gather_buf[tmp_gather_cnt * i + 2];
+        ug_win->targets[i].world_rank = (int) tmp_gather_buf[tmp_gather_cnt * i + 3];
+        ug_win->targets[i].user_world_rank = (int) tmp_gather_buf[tmp_gather_cnt * i + 4];
+        ug_win->targets[i].node_id = (int) tmp_gather_buf[tmp_gather_cnt * i + 5];
+        ug_win->targets[i].local_user_nprocs = (int) tmp_gather_buf[tmp_gather_cnt * i + 6];
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+        ug_win->targets[i].async_stat = (CSP_async_config) tmp_gather_buf[tmp_gather_cnt * i + 7];
+        all_targets_async_off &= (ug_win->targets[i].async_stat == CSP_TARGET_ASYNC_OFF);
+#endif
 
         /* Calculate the maximum number of processes per node */
         ug_win->max_local_user_nprocs = CSP_max(ug_win->max_local_user_nprocs,
@@ -683,6 +727,18 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
                       ug_win->targets[i].user_world_rank, ug_win->targets[i].node_id,
                       ug_win->targets[i].local_user_nprocs);
     }
+
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+    CSP_DBG_PRINT("all_targets_async_off=%d\n", all_targets_async_off);
+    for (i = 0; i < user_nprocs; i++) {
+        CSP_DBG_PRINT("\t targets[%d].async_stat=%d\n", i, ug_win->targets[i].async_stat);
+    }
+#endif
+#endif
+
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+    if (all_targets_async_off)
+        goto fn_noasync;
 #endif
 
     /* Notify Ghosts start and create user root + ghosts communicator for
@@ -833,6 +889,10 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
 
   fn_noasync:
     CSP_win_release(ug_win);
+
+    mpi_errno = PMPI_Win_allocate(size, disp_unit, info, user_comm, baseptr, win);
+    CSP_DBG_PRINT("Async is turned off in win_allocate, return normal win 0x%x\n", *win);
+
     goto fn_exit;
 
   fn_fail:
