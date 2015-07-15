@@ -102,6 +102,11 @@ static int CSP_initialize_env()
         else if (!strncmp(val, "off", strlen("off"))) {
             CSP_ENV.async_config = CSP_ASYNC_CONFIG_OFF;
         }
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+        else if (!strncmp(val, "auto", strlen("auto"))) {
+            CSP_ENV.async_config = CSP_ASYNC_CONFIG_AUTO;
+        }
+#endif
         else {
             fprintf(stderr, "Unknown CSP_ASYNC_CONFIG %s\n", val);
             return -1;
@@ -147,6 +152,36 @@ static int CSP_initialize_env()
     CSP_ENV.load_lock = CSP_LOAD_LOCK_NATURE;
 #endif
 
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+    /* Runtime scheduling of asynchronous progress configuration */
+    CSP_ENV.async_sched_thr_l = CSP_RUNTIME_ASYNC_SCHED_THR_DEFAULT_FREQ;
+    CSP_ENV.async_sched_thr_h = CSP_RUNTIME_ASYNC_SCHED_THR_DEFAULT_FREQ;
+
+    val = getenv("CSP_RUNTIME_ASYNC_SCHED_THR_H");
+    if (val && strlen(val)) {
+        CSP_ENV.async_sched_thr_h = atoll(val);
+        if (CSP_ENV.async_sched_thr_h <= 0) {
+            CSP_ERR_PRINT("Wrong CSP_RUNTIME_ASYNC_SCHED_THR_H %llu\n", CSP_ENV.async_sched_thr_h);
+            return -1;
+        }
+    }
+    val = getenv("CSP_RUNTIME_ASYNC_SCHED_THR_L");
+    if (val && strlen(val)) {
+        CSP_ENV.async_sched_thr_l = atoll(val);
+        if (CSP_ENV.async_sched_thr_h <= 0) {
+            CSP_ERR_PRINT("Wrong CSP_RUNTIME_ASYNC_SCHED_THR_L %llu\n", CSP_ENV.async_sched_thr_l);
+            return -1;
+        }
+    }
+
+    if (CSP_ENV.async_sched_thr_l > CSP_ENV.async_sched_thr_h) {
+        CSP_ERR_PRINT("Wrong CSP_RUNTIME_ASYNC_SCHED_THR_H %llu or "
+                      "CSP_RUNTIME_ASYNC_SCHED_THR_L %llu\n",
+                      CSP_ENV.async_sched_thr_h, CSP_ENV.async_sched_thr_l);
+        return -1;
+    }
+#endif
+
     if (CSP_ENV.verbose && CSP_MY_RANK_IN_WORLD == 0) {
         CSP_INFO_PRINT(1, "CASPER Configuration:  \n"
 #ifdef CSP_ENABLE_EPOCH_STAT_CHECK
@@ -158,12 +193,15 @@ static int CSP_initialize_env()
 #ifdef CSP_ENABLE_RUNTIME_MONITOR
                        "    RUNTIME_MONITORING (enabled) \n"
 #endif
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+                       "    RUNTIME_ASYNC_SCHED (enabled) \n"
+#endif
                        "    CSP_NG = %d \n"
                        "    CSP_LOCK_METHOD = %s \n"
                        "    CSP_ASYNC_CONFIG = %s\n",
                        CSP_ENV.num_g,
                        (CSP_ENV.lock_binding == CSP_LOCK_BINDING_RANK) ? "rank" : "segment",
-                       (CSP_ENV.async_config == CSP_ASYNC_CONFIG_ON) ? "on" : "off");
+                       CSP_get_async_config_name(CSP_ENV.async_config));
 
         if (CSP_ENV.lock_binding == CSP_LOCK_BINDING_SEGMENT) {
             CSP_INFO_PRINT(1, "    CSP_SEG_SIZE = %d \n", CSP_ENV.seg_size);
@@ -176,6 +214,13 @@ static int CSP_initialize_env()
                        (CSP_ENV.load_opt == CSP_LOAD_OPT_RANDOM) ? "random" :
                        ((CSP_ENV.load_opt == CSP_LOAD_OPT_COUNTING) ? "op" : "byte"),
                        (CSP_ENV.load_lock == CSP_LOAD_LOCK_NATURE) ? "nature" : "force");
+#endif
+
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+        CSP_INFO_PRINT(1, "Runtime Scheduling Options for Asynchronous Configuration:  \n"
+                       "    CSP_RUNTIME_ASYNC_SCHED_THR_L = %llu \n"
+                       "    CSP_RUNTIME_ASYNC_SCHED_THR_H = %llu \n",
+                       CSP_ENV.async_sched_thr_l, CSP_ENV.async_sched_thr_h);
 #endif
         CSP_INFO_PRINT(1, "\n");
         fflush(stdout);

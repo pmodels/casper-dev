@@ -32,6 +32,19 @@ static int CSP_win_mixed_unlock_all_impl(CSP_win * ug_win)
     }
 #else
     for (i = 0; i < user_nprocs; i++) {
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+        /* only unlock target if it is in async-off state  */
+        if (ug_win->targets[i].async_stat == CSP_TARGET_ASYNC_OFF) {
+            CSP_DBG_PRINT("[%d]unlock(target(%d), ug_win 0x%x), instead of "
+                          "target rank %d\n", user_rank, ug_win->targets[i].ug_rank,
+                          ug_win->targets[i].ug_win, i);
+            mpi_errno = PMPI_Win_unlock(ug_win->targets[i].ug_rank, ug_win->targets[i].ug_win);
+            if (mpi_errno != MPI_SUCCESS)
+                goto fn_fail;
+            continue;
+        }
+#endif
+
         for (k = 0; k < CSP_ENV.num_g; k++) {
             int target_g_rank_in_ug = ug_win->targets[i].g_ranks_in_ug[k];
 

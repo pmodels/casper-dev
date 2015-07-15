@@ -38,6 +38,19 @@ int MPI_Win_flush(int target_rank, MPI_Win win)
 
     target = &(ug_win->targets[target_rank]);
 
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+    /* only flush target if it is in async-off state  */
+    if (target->async_stat == CSP_TARGET_ASYNC_OFF) {
+        mpi_errno = PMPI_Win_flush(target->ug_rank, target->ug_win);
+        if (mpi_errno != MPI_SUCCESS)
+            goto fn_fail;
+
+        CSP_DBG_PRINT("[%d]flush(ug_win 0x%x, target %d), instead of target rank %d\n",
+                      user_rank, target->ug_win, target->ug_rank, target_rank);
+        goto fn_exit;
+    }
+#endif
+
 #ifdef CSP_ENABLE_EPOCH_STAT_CHECK
     /* Check access epoch status.
      * The current epoch must be lock_all or lock.*/

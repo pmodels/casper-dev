@@ -35,6 +35,19 @@ static int CSP_win_mixed_flush_all_impl(CSP_win * ug_win)
 
     /* TODO: track op issuing, only flush the ghosts which receive ops. */
     for (i = 0; i < user_nprocs; i++) {
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+        /* flush targets which are in async-off state. */
+        if (ug_win->targets[i].async_stat == CSP_TARGET_ASYNC_OFF) {
+            CSP_DBG_PRINT("[%d]flush(target(%d), ug_wins 0x%x), instead of "
+                          "target rank %d\n", user_rank, ug_win->targets[i].ug_rank,
+                          ug_win->targets[i].ug_win, i);
+            mpi_errno = PMPI_Win_flush(ug_win->targets[i].ug_rank, ug_win->targets[i].ug_win);
+            if (mpi_errno != MPI_SUCCESS)
+                goto fn_fail;
+            continue;
+        }
+#endif
+
 #if !defined(CSP_ENABLE_RUNTIME_LOAD_OPT)
         int j;
         /* RMA operations are only issued to the main ghost, so we only flush it. */
@@ -133,7 +146,24 @@ int MPI_Win_flush_all(MPI_Win win)
             if (mpi_errno != MPI_SUCCESS)
                 goto fn_fail;
         }
+
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+        if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
+            /* flush targets which are in async-off state.
+             * Note that, for all-async-off case, RMA goes through normal window. */
+            for (i = 0; i < user_nprocs; i++) {
+                if (ug_win->targets[i].async_stat == CSP_TARGET_ASYNC_OFF) {
+                    CSP_DBG_PRINT("[%d]flush(target(%d), ug_wins 0x%x), instead of "
+                                  "target rank %d\n", user_rank, ug_win->targets[i].ug_rank,
+                                  ug_win->ug_wins[0], i);
+                    mpi_errno = PMPI_Win_flush(ug_win->targets[i].ug_rank, ug_win->ug_wins[0]);
+                    if (mpi_errno != MPI_SUCCESS)
+                        goto fn_fail;
+                }
+            }
+        }
 #endif
+#endif /* end of CSP_ENABLE_SYNC_ALL_OPT */
     }
     else {
 

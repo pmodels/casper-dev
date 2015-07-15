@@ -40,6 +40,7 @@ static int CSP_rget_accumulate_impl(const void *origin_addr, int origin_count,
     MPI_Aint ug_target_disp = 0;
     int rank;
     CSP_win_target *target = NULL;
+    MPI_Win *win_ptr = NULL;
 
     if (target_rank == MPI_PROC_NULL) {
         mpi_errno = CSP_proc_null_rget_accumualte_impl(origin_addr, origin_count, origin_datatype,
@@ -54,6 +55,23 @@ static int CSP_rget_accumulate_impl(const void *origin_addr, int origin_count,
 
 #ifdef CSP_ENABLE_EPOCH_STAT_CHECK
     CSP_target_check_epoch_per_op(target, ug_win);
+#endif
+
+    CSP_target_get_epoch_win(0, target, ug_win, win_ptr);
+
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+    /* If the target is async-off, directly send to the target via internal window.
+     * Note that, for all-async-off case, RMA goes through normal window. */
+    if (target->async_stat == CSP_TARGET_ASYNC_OFF) {
+        mpi_errno = PMPI_Rget_accumulate(origin_addr, origin_count, origin_datatype,
+                                         result_addr, result_count, result_datatype,
+                                         target->ug_rank, target_disp, target_count,
+                                         target_datatype, op, *win_ptr, request);
+
+        CSP_DBG_PRINT("CASPER Rget_accumulate to (target %d, win 0x%x [%s]) \n",
+                      target->ug_rank, *win_ptr, CSP_target_get_epoch_stat_name(target, ug_win));
+        goto fn_exit;
+    }
 #endif
 
     /* Should not do local RMA in accumulate because of atomicity issue */
@@ -77,9 +95,6 @@ static int CSP_rget_accumulate_impl(const void *origin_addr, int origin_count,
         int target_g_rank_in_ug = -1;
         int data_size CSP_ATTRIBUTE((unused)) = 0;
         MPI_Aint target_g_offset = 0;
-        MPI_Win *win_ptr = NULL;
-
-        CSP_target_get_epoch_win(0, target, ug_win, win_ptr);
 
 #if defined(CSP_ENABLE_RUNTIME_LOAD_OPT)
         if (CSP_ENV.load_opt == CSP_LOAD_BYTE_COUNTING) {
