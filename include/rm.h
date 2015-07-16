@@ -25,6 +25,11 @@ typedef struct {
     double time;
     double timer_sta;
     double interval_sta;
+
+    /* for debug use */
+    double last_time;
+    double last_interval;
+    int last_freq;
 } CSP_rm;
 
 /* local runtime monitor */
@@ -42,9 +47,10 @@ static inline void CSP_rm_count_end(CSP_rm_type type)
 
 static inline void CSP_rm_reset(CSP_rm_type type)
 {
+    double now = PMPI_Wtime();
+
     CSP_RM[type].time = 0;
-    CSP_RM[type].timer_sta = 0;
-    CSP_RM[type].interval_sta = PMPI_Wtime();
+    CSP_RM[type].interval_sta = now;
 }
 
 static inline void CSP_rm_reset_all()
