@@ -731,13 +731,53 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
                       ug_win->targets[i].user_world_rank, ug_win->targets[i].node_id,
                       ug_win->targets[i].local_user_nprocs);
     }
+#endif
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-    CSP_DBG_PRINT("all_targets_async_off=%d\n", all_targets_async_off);
-    for (i = 0; i < user_nprocs; i++) {
-        CSP_DBG_PRINT("\t targets[%d].async_stat=%d\n", i, ug_win->targets[i].async_stat);
+    if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
+        /* Only the root user prints a summary of the async status. */
+        if (user_rank == 0 && CSP_ENV.verbose >= 3) {
+            int async_on_cnt = 0;
+            int async_off_cnt = 0;
+            for (i = 0; i < user_nprocs; i++) {
+                if (ug_win->targets[i].async_stat == CSP_TARGET_ASYNC_ON) {
+                    async_on_cnt++;
+                }
+                else {
+                    async_off_cnt++;
+                }
+            }
+            CSP_INFO_PRINT(3, "    Per-target async_config summary: on %d; off %d\n",
+                           async_on_cnt, async_off_cnt);
+        }
+
+        /* The root user prints out the frequency number on every user process. */
+        if (CSP_ENV.verbose >= 4) {
+            /* Gather frequency numbers to root user */
+            double *tmp_async_gather_buf = NULL;
+            tmp_async_gather_buf = CSP_calloc(3 * user_nprocs, sizeof(double));
+
+            tmp_async_gather_buf[3 * user_rank] = CSP_RM[CSP_RM_COMM_FREQ].last_freq * 1.0;
+            tmp_async_gather_buf[3 * user_rank + 1] = CSP_RM[CSP_RM_COMM_FREQ].last_time;
+            tmp_async_gather_buf[3 * user_rank + 2] = CSP_RM[CSP_RM_COMM_FREQ].last_interval;
+            mpi_errno = PMPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, tmp_async_gather_buf,
+                                       3, MPI_DOUBLE, user_comm);
+            if (mpi_errno != MPI_SUCCESS) {
+                free(tmp_async_gather_buf);
+                goto fn_fail;
+            }
+
+            if (user_rank == 0) {
+                CSP_INFO_PRINT(4, "    Per-target async_config:\n");
+                for (i = 0; i < user_nprocs; i++)
+                    CSP_INFO_PRINT(4, "    [%d] async stat: freq=%.0f(%.4f/%.4f)\n",
+                                   i, tmp_async_gather_buf[3 * i],
+                                   tmp_async_gather_buf[3 * i + 1],
+                                   tmp_async_gather_buf[3 * i + 2]);
+            }
+            free(tmp_async_gather_buf);
+        }
     }
-#endif
 #endif
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
