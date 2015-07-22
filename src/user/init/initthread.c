@@ -36,6 +36,8 @@ CSP_define_win_cache;
 /* TODO: Move load balancing option into env setting */
 CSP_env_param CSP_ENV;
 
+FILE *CSP_appending_fp = NULL;
+
 #ifdef CSP_ENABLE_RUNTIME_MONITOR
 /* local runtime monitor */
 CSP_rm CSP_RM[CSP_RM_MAX_TYPE];
@@ -76,6 +78,15 @@ static int CSP_initialize_env()
         CSP_ENV.verbose = atoi(val);
         if (CSP_ENV.verbose < 0)
             CSP_ENV.verbose = 0;
+    }
+
+    CSP_ENV.file_verbose = 0;
+    val = getenv("CSP_FILE_VERBOSE");
+    if (val && strlen(val)) {
+        /* VERBOSE level with file output format */
+        CSP_ENV.file_verbose = atoi(val);
+        if (CSP_ENV.file_verbose < 0)
+            CSP_ENV.file_verbose = 0;
     }
 
     CSP_ENV.lock_binding = CSP_LOCK_BINDING_RANK;
@@ -196,9 +207,11 @@ static int CSP_initialize_env()
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
                        "    RUNTIME_ASYNC_SCHED (enabled) \n"
 #endif
+                       "    CSP_VERBOSE = %d (FILE %d) \n"
                        "    CSP_NG = %d \n"
                        "    CSP_LOCK_METHOD = %s \n"
                        "    CSP_ASYNC_CONFIG = %s\n",
+                       CSP_ENV.verbose, CSP_ENV.file_verbose,
                        CSP_ENV.num_g,
                        (CSP_ENV.lock_binding == CSP_LOCK_BINDING_RANK) ? "rank" : "segment",
                        CSP_get_async_config_name(CSP_ENV.async_config));

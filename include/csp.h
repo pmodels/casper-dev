@@ -103,6 +103,42 @@
     }   \
     } while (0)
 
+
+extern FILE *CSP_appending_fp;
+#define CSP_INFO_PRINT_FILE_START(level, fname) do { \
+    if (CSP_ENV.file_verbose > 0 && CSP_ENV.file_verbose >= level) {                      \
+        CSP_assert(CSP_appending_fp == NULL); /* ensure all previous files are closed */  \
+        CSP_appending_fp = fopen(fname, "a");                                             \
+    }                                                                                     \
+    } while (0)
+
+#define CSP_INFO_PRINT_FILE_APPEND(level, str, ...) do { \
+    if (CSP_ENV.file_verbose > 0 && CSP_ENV.file_verbose >= level) { \
+        if (CSP_appending_fp != NULL) {                               \
+            fprintf(CSP_appending_fp, str, ## __VA_ARGS__);          \
+            fflush(CSP_appending_fp);                                \
+        }                                                            \
+    }                                                                \
+    } while (0)
+#define CSP_INFO_PRINT_FILE_END(level, fname) do { \
+    if (CSP_ENV.file_verbose > 0 && CSP_ENV.file_verbose >= level) { \
+        if (CSP_appending_fp != NULL);                               \
+            fclose(CSP_appending_fp);                                \
+        CSP_appending_fp = NULL;                                     \
+    }                                                                \
+    } while (0)
+
+#define CSP_INFO_PRINT_FILE(level, fname, str, ...) do { \
+    if (CSP_ENV.file_verbose > 0 && CSP_ENV.file_verbose >= level) { \
+        FILE *fp = fopen(fname, "a");                                \
+        if (fp != NULL) {                                            \
+            fprintf(fp, str, ## __VA_ARGS__);                        \
+            fflush(fp);                                              \
+            fclose(fp);                                              \
+        }                                                            \
+    }                                                                \
+    } while (0)
+
 #define CSP_DBG_PRINT_FCNAME() CSP_DBG_PRINT("in %s\n", __FUNCTION__)
 #define CSP_ERR_PRINT(str,...) do { \
     fprintf(stderr, "[CSP][%d]"str, CSP_MY_RANK_IN_WORLD, ## __VA_ARGS__); \
@@ -171,6 +207,7 @@ typedef struct CSP_env_param {
     CSP_lock_binding lock_binding;
 
     int verbose;                /* verbose level. print configuration information. */
+    int file_verbose;           /* verbose level. print configuration information in files. */
     CSP_async_config async_config;
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
