@@ -29,6 +29,7 @@ const char *CSP_win_epoch_stat_name[4] = {
 };
 
 static unsigned long win_id = 0;
+char CSP_epoch_types_name[128];
 
 static int read_win_info(MPI_Info info, CSP_win * ug_win)
 {
@@ -125,28 +126,31 @@ static int read_win_info(MPI_Info info, CSP_win * ug_win)
         }
     }
 
-    CSP_DBG_PRINT("no_local_load_store %d, epoch_type=%s|%s|%s|%s\n",
+    CSP_DBG_PRINT("no_local_load_store %d, epoch_type=%s\n",
                   ug_win->info_args.no_local_load_store,
-                  ((ug_win->info_args.epoch_type & CSP_EPOCH_LOCK_ALL) ? "lockall" : ""),
-                  ((ug_win->info_args.epoch_type & CSP_EPOCH_LOCK) ? "lock" : ""),
-                  ((ug_win->info_args.epoch_type & CSP_EPOCH_PSCW) ? "pscw" : ""),
-                  ((ug_win->info_args.epoch_type & CSP_EPOCH_FENCE) ? "fence" : ""));
+                  CSP_get_epoch_types_name(ug_win->info_args.epoch_type));
 
-    if (CSP_ENV.verbose) {
+    if (CSP_ENV.verbose || CSP_ENV.file_verbose) {
         int user_rank = -1;
         PMPI_Comm_rank(ug_win->user_comm, &user_rank);
         if (user_rank == 0) {
-            CSP_INFO_PRINT(2, "CASPER Window: %s \n"
-                           "    no_local_load_store = %s\n"
-                           "    epoch_type = %s%s%s%s\n"
-                           "    async_config = %s\n\n",
-                           ug_win->info_args.win_name,
+            CSP_INFO_PRINT(2, "CASPER Window: %s \n", ug_win->info_args.win_name);
+            CSP_INFO_PRINT(4, "    no_local_load_store = %s\n"
+                           "    epoch_type = %s\n"
+                           "    async_config = %s\n",
                            (ug_win->info_args.no_local_load_store ? "TRUE" : " FALSE"),
-                           ((ug_win->info_args.epoch_type & CSP_EPOCH_LOCK_ALL) ? "lockall" : ""),
-                           ((ug_win->info_args.epoch_type & CSP_EPOCH_LOCK) ? "|lock" : ""),
-                           ((ug_win->info_args.epoch_type & CSP_EPOCH_PSCW) ? "|pscw" : ""),
-                           ((ug_win->info_args.epoch_type & CSP_EPOCH_FENCE) ? "|fence" : ""),
+                           CSP_get_epoch_types_name(ug_win->info_args.epoch_type),
                            CSP_get_async_config_name(ug_win->info_args.async_config));
+
+            CSP_INFO_PRINT_FILE_START(1, ug_win->info_args.win_name);
+            CSP_INFO_PRINT_FILE_APPEND(1, "CASPER Window: %s \n"
+                                       "    no_local_load_store = %s\n"
+                                       "    epoch_type = %s\n"
+                                       "    async_config = %s\n\n",
+                                       ug_win->info_args.win_name,
+                                       (ug_win->info_args.no_local_load_store ? "TRUE" : " FALSE"),
+                                       CSP_get_epoch_types_name(ug_win->info_args.epoch_type),
+                                       CSP_get_async_config_name(ug_win->info_args.async_config));
         }
     }
 
@@ -739,10 +743,16 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     }
 #endif
 
+    if (user_rank == 0) {
+        CSP_INFO_PRINT(4, "    size(KB) = %ld, disp_unit = %ld\n\n", size / 1024, disp_unit);
+        CSP_INFO_PRINT_FILE_APPEND(1, "    size(KB) = %ld, disp_unit = %ld\n\n", size / 1024,
+                                   disp_unit);
+    }
+
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
     if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
         /* Only the root user prints a summary of the async status. */
-        if (user_rank == 0 && CSP_ENV.verbose >= 3) {
+        if (user_rank == 0 && (CSP_ENV.verbose >= 3 || CSP_ENV.file_verbose >= 1)) {
             int async_on_cnt = 0;
             int async_off_cnt = 0;
             for (i = 0; i < user_nprocs; i++) {
@@ -755,10 +765,12 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
             }
             CSP_INFO_PRINT(3, "    Per-target async_config summary: on %d; off %d\n",
                            async_on_cnt, async_off_cnt);
+            CSP_INFO_PRINT_FILE_APPEND(1, "    Per-target async_config summary: on %d; off %d\n",
+                                       async_on_cnt, async_off_cnt);
         }
 
         /* The root user prints out the frequency number on every user process. */
-        if (CSP_ENV.verbose >= 4) {
+        if (CSP_ENV.file_verbose >= 2) {
             /* Gather frequency numbers to root user */
             double *tmp_async_gather_buf = NULL;
             tmp_async_gather_buf = CSP_calloc(3 * user_nprocs, sizeof(double));
@@ -774,12 +786,12 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
             }
 
             if (user_rank == 0) {
-                CSP_INFO_PRINT(4, "    Per-target async_config:\n");
+                CSP_INFO_PRINT_FILE_APPEND(2, "    Per-target async_config:\n");
                 for (i = 0; i < user_nprocs; i++)
-                    CSP_INFO_PRINT(4, "    [%d] async stat: freq=%.0f(%.4f/%.4f)\n",
-                                   i, tmp_async_gather_buf[3 * i],
-                                   tmp_async_gather_buf[3 * i + 1],
-                                   tmp_async_gather_buf[3 * i + 2]);
+                    CSP_INFO_PRINT_FILE_APPEND(2, "    [%d] async stat: freq=%.0f(%.4f/%.4f)\n",
+                                               i, tmp_async_gather_buf[3 * i],
+                                               tmp_async_gather_buf[3 * i + 1],
+                                               tmp_async_gather_buf[3 * i + 2]);
             }
             free(tmp_async_gather_buf);
         }
@@ -930,6 +942,11 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     CSP_cache_ug_win(ug_win->win, ug_win);
 
   fn_exit:
+    PMPI_Comm_rank(user_comm, &user_rank);
+    if (user_rank == 0) {
+        CSP_INFO_PRINT(4, "\n");
+        CSP_INFO_PRINT_FILE_END(1, ug_win->info_args.win_name);
+    }
     if (shared_info && shared_info != MPI_INFO_NULL)
         PMPI_Info_free(&shared_info);
     if (tmp_gather_buf)

@@ -122,7 +122,7 @@ extern FILE *CSP_appending_fp;
     } while (0)
 #define CSP_INFO_PRINT_FILE_END(level, fname) do { \
     if (CSP_ENV.file_verbose > 0 && CSP_ENV.file_verbose >= level) { \
-        if (CSP_appending_fp != NULL);                               \
+        if (CSP_appending_fp != NULL)                                \
             fclose(CSP_appending_fp);                                \
         CSP_appending_fp = NULL;                                     \
     }                                                                \
@@ -694,6 +694,18 @@ static inline const char *CSP_get_async_config_name(CSP_async_config async_confi
 #endif
     }
     return name;
+}
+
+extern char CSP_epoch_types_name[128];
+static inline const char *CSP_get_epoch_types_name(int epoch_types)
+{
+    memset(CSP_epoch_types_name, 0, sizeof(CSP_epoch_types_name));
+    sprintf(CSP_epoch_types_name, "%s%s%s%s",
+            ((epoch_types & CSP_EPOCH_LOCK_ALL) ? "lockall" : ""),
+            ((epoch_types & CSP_EPOCH_LOCK) ? "|lock" : ""),
+            ((epoch_types & CSP_EPOCH_PSCW) ? "|pscw" : ""),
+            ((epoch_types & CSP_EPOCH_FENCE) ? "|fence" : ""));
+    return (const char *) CSP_epoch_types_name;
 }
 
 extern int run_g_main(void);
