@@ -28,6 +28,8 @@ const char *CSP_win_epoch_stat_name[4] = {
     "PER_TARGET"
 };
 
+static unsigned long win_id = 0;
+
 static int read_win_info(MPI_Info info, CSP_win * ug_win)
 {
     int mpi_errno = MPI_SUCCESS;
@@ -36,6 +38,10 @@ static int read_win_info(MPI_Info info, CSP_win * ug_win)
     ug_win->info_args.epoch_type = CSP_EPOCH_LOCK_ALL | CSP_EPOCH_LOCK |
         CSP_EPOCH_PSCW | CSP_EPOCH_FENCE;
     ug_win->info_args.async_config = CSP_ENV.async_config;      /* default */
+
+    /* default window name */
+    sprintf(ug_win->info_args.win_name, "win-%d-%lu", CSP_MY_RANK_IN_WORLD, win_id);
+    win_id++;
 
     if (info != MPI_INFO_NULL) {
         int info_flag = 0;
@@ -108,13 +114,13 @@ static int read_win_info(MPI_Info info, CSP_win * ug_win)
         /* Check if user sets window name.
          * It is not passed to MPI, only for casper debug use). For the name
          * user wants to pass to MPI, should call MPI_Win_set_name instead. */
-        memset(ug_win->info_args.win_name, 0, sizeof(ug_win->info_args.win_name));
         memset(info_value, 0, sizeof(info_value));
         mpi_errno = PMPI_Info_get(info, "win_name", MPI_MAX_INFO_VAL, info_value, &info_flag);
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
 
         if (info_flag == 1) {
+            memset(ug_win->info_args.win_name, 0, sizeof(ug_win->info_args.win_name));
             strncpy(ug_win->info_args.win_name, info_value, MPI_MAX_OBJECT_NAME);
         }
     }
