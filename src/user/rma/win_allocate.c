@@ -134,13 +134,16 @@ static int read_win_info(MPI_Info info, CSP_win * ug_win)
         int user_rank = -1;
         PMPI_Comm_rank(ug_win->user_comm, &user_rank);
         if (user_rank == 0) {
+            const char *epoch_type_name = CSP_get_epoch_types_name(ug_win->info_args.epoch_type);
+            const char *async_config_name =
+                CSP_get_async_config_name(ug_win->info_args.async_config);
+
             CSP_INFO_PRINT(2, "CASPER Window: %s \n", ug_win->info_args.win_name);
             CSP_INFO_PRINT(4, "    no_local_load_store = %s\n"
                            "    epoch_type = %s\n"
                            "    async_config = %s\n",
                            (ug_win->info_args.no_local_load_store ? "TRUE" : " FALSE"),
-                           CSP_get_epoch_types_name(ug_win->info_args.epoch_type),
-                           CSP_get_async_config_name(ug_win->info_args.async_config));
+                           epoch_type_name, async_config_name);
 
             CSP_INFO_PRINT_FILE_START(1, ug_win->info_args.win_name);
             CSP_INFO_PRINT_FILE_APPEND(1, "CASPER Window: %s \n"
@@ -149,8 +152,7 @@ static int read_win_info(MPI_Info info, CSP_win * ug_win)
                                        "    async_config = %s\n\n",
                                        ug_win->info_args.win_name,
                                        (ug_win->info_args.no_local_load_store ? "TRUE" : " FALSE"),
-                                       CSP_get_epoch_types_name(ug_win->info_args.epoch_type),
-                                       CSP_get_async_config_name(ug_win->info_args.async_config));
+                                       epoch_type_name, async_config_name);
         }
     }
 
@@ -609,6 +611,11 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     int tmp_bcast_buf[2];
     MPI_Info shared_info = MPI_INFO_NULL;
 
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+    CSP_target_async_stat my_async_stat = CSP_TARGET_ASYNC_ON;
+    int all_targets_async_off = 1;
+#endif
+
     CSP_DBG_PRINT_FCNAME();
     CSP_rm_count_start(CSP_RM_COMM_FREQ);
 
@@ -683,9 +690,6 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     }
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-    CSP_target_async_stat my_async_stat = CSP_TARGET_ASYNC_ON;
-    int all_targets_async_off = 1;
-
     /* If runtime scheduling is enabled for this window, we exchange the
      * asynchronous configure with every target, since its value might be different. */
     if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
@@ -720,7 +724,8 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
         ug_win->targets[i].node_id = (int) tmp_gather_buf[tmp_gather_cnt * i + 5];
         ug_win->targets[i].local_user_nprocs = (int) tmp_gather_buf[tmp_gather_cnt * i + 6];
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-        ug_win->targets[i].async_stat = (CSP_async_config) tmp_gather_buf[tmp_gather_cnt * i + 7];
+        ug_win->targets[i].async_stat =
+            (CSP_target_async_stat) tmp_gather_buf[tmp_gather_cnt * i + 7];
         all_targets_async_off &= (ug_win->targets[i].async_stat == CSP_TARGET_ASYNC_OFF);
 #endif
 
@@ -744,8 +749,8 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
 #endif
 
     if (user_rank == 0) {
-        CSP_INFO_PRINT(4, "    size(KB) = %ld, disp_unit = %ld\n\n", size / 1024, disp_unit);
-        CSP_INFO_PRINT_FILE_APPEND(1, "    size(KB) = %ld, disp_unit = %ld\n\n", size / 1024,
+        CSP_INFO_PRINT(4, "    size(KB) = %ld, disp_unit = %d\n\n", size / 1024, disp_unit);
+        CSP_INFO_PRINT_FILE_APPEND(1, "    size(KB) = %ld, disp_unit = %d\n\n", size / 1024,
                                    disp_unit);
     }
 
