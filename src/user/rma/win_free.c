@@ -177,6 +177,12 @@ int MPI_Win_free(MPI_Win * win)
 
     if (ug_win == NULL) {
         /* normal window */
+
+        /* remove and release window name.
+         * Window name is cached to the user window only when no internal window
+         * created.*/
+        CSP_remove_win_name_from_cache((*win));
+
         return PMPI_Win_free(win);
     }
 

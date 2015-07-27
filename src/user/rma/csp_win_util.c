@@ -24,8 +24,11 @@ void CSP_win_dump_async_config(MPI_Win win, const char *fname)
     if (fp != NULL) {
         CSP_fetch_ug_win_from_cache(win, ug_win);
         if (ug_win == NULL) {
+            char *name = NULL;
+            CSP_fetch_win_name_from_cache(win, name);
+
             /* all off */
-            fprintf(fp, "CASPER Window: %s, async_config=%s", ug_win->info_args.win_name, "off");
+            fprintf(fp, "CASPER Window: %s, async_config=%s\n", name, "off");
         }
         else {
             /* on or auto */

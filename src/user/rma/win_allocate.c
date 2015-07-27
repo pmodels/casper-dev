@@ -961,10 +961,12 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     return mpi_errno;
 
   fn_noasync:
-    CSP_win_release(ug_win);
-
     mpi_errno = PMPI_Win_allocate(size, disp_unit, info, user_comm, baseptr, win);
     CSP_DBG_PRINT("Async is turned off in win_allocate, return normal win 0x%x\n", *win);
+
+    /* cache casper window name, thus we can still debug on it even no internal window. */
+    CSP_cache_win_name((*win), ug_win->info_args.win_name);
+    CSP_win_release(ug_win);
 
     goto fn_exit;
 

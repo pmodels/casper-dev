@@ -457,6 +457,67 @@ extern int UG_WIN_HANDLE_KEY;
     }   \
 }
 
+#define CSP_define_win_name_cache \
+    int UG_WIN_NAME_KEY = MPI_KEYVAL_INVALID;   \
+    /* track allocated name objects */  \
+    int ug_win_name_malloc_cnt = 0
+
+extern int UG_WIN_NAME_KEY;
+extern int ug_win_name_malloc_cnt;
+
+#define CSP_init_win_name_cache() {    \
+    mpi_errno = PMPI_Win_create_keyval(MPI_WIN_NULL_COPY_FN, \
+            MPI_WIN_NULL_DELETE_FN, &UG_WIN_NAME_KEY, (void *) 0);    \
+    if (mpi_errno != 0) \
+        goto fn_fail;   \
+}
+
+#define CSP_destroy_win_name_cache() {    \
+    if (ug_win_name_malloc_cnt) \
+        CSP_ERR_PRINT("%d name objects are not released yet\n", ug_win_name_malloc_cnt);   \
+    if (UG_WIN_NAME_KEY != MPI_KEYVAL_INVALID) {  \
+        mpi_errno = PMPI_Win_free_keyval(&UG_WIN_NAME_KEY);    \
+        if (mpi_errno != MPI_SUCCESS){  \
+            CSP_ERR_PRINT("Free UG_WIN_NAME_KEY %p\n", &UG_WIN_NAME_KEY);   \
+        }   /*Do not jump to fn_fail, because it is also used in fn_fail processing */ \
+    }   \
+}
+
+#define CSP_fetch_win_name_from_cache(win, name) { \
+    int fetch_name_flag = 0;   \
+    mpi_errno = PMPI_Win_get_attr(win, UG_WIN_NAME_KEY, &name, &fetch_name_flag);   \
+    if (!fetch_name_flag || mpi_errno != MPI_SUCCESS){  \
+        CSP_DBG_PRINT("Cannot fetch window name from win 0x%x\n", win);   \
+        name = NULL; \
+    }   \
+}
+
+#define CSP_remove_win_name_from_cache(win) { \
+    char *name = NULL;  \
+    int fetch_name_flag = 0;   \
+    mpi_errno = PMPI_Win_get_attr(win, UG_WIN_NAME_KEY, &name, &fetch_name_flag);   \
+    if (fetch_name_flag && mpi_errno == MPI_SUCCESS && name){  \
+        free(name); \
+        ug_win_name_malloc_cnt--;   \
+    }   \
+    mpi_errno = PMPI_Win_delete_attr(win, UG_WIN_NAME_KEY);   \
+}
+
+#define CSP_cache_win_name(win, name) { \
+    char *name_str = NULL;  \
+    name_str = CSP_calloc(1, strlen(name) + 1);    \
+    strncpy(name_str, name, strlen(name));  \
+    mpi_errno = PMPI_Win_set_attr(win, UG_WIN_NAME_KEY, name_str);  \
+    if (mpi_errno != MPI_SUCCESS){  \
+        CSP_ERR_PRINT("Cannot cache window name %p for win 0x%x\n", name, win);   \
+        if (name) \
+            free(name);     \
+        goto fn_fail;   \
+    }   \
+    ug_win_name_malloc_cnt++;   \
+    CSP_DBG_PRINT("cache window name %p into win 0x%x \n", name, win);  \
+}
+
 extern MPI_Comm CSP_COMM_USER_WORLD;
 extern MPI_Comm CSP_COMM_LOCAL;
 extern MPI_Comm CSP_COMM_USER_LOCAL;
