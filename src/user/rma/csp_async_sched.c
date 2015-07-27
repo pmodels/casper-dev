@@ -37,7 +37,7 @@ CSP_target_async_stat CSP_ra_sched_async_stat()
 
     /* schedule async config by using dynamic frequency */
     interval = PMPI_Wtime() - CSP_RM[CSP_RM_COMM_FREQ].interval_sta;
-    freq = (CSP_RM[CSP_RM_COMM_FREQ].time / interval * 100);
+    freq = (int) (CSP_RM[CSP_RM_COMM_FREQ].time / interval * 100);
 
     if (freq >= CSP_ENV.async_sched_thr_h) {
         CSP_MY_ASYNC_STAT = CSP_TARGET_ASYNC_OFF;

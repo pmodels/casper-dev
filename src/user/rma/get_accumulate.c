@@ -43,7 +43,7 @@ static int CSP_get_accumulate_impl(const void *origin_addr, int origin_count,
                                         target->ug_rank, target_disp, target_count,
                                         target_datatype, op, *win_ptr);
 
-        CSP_DBG_PRINT("CASPER Get_accumulate to (target %d, win 0x%x [%s]) ",
+        CSP_DBG_PRINT("CASPER Get_accumulate to (target %d, win 0x%x [%s]) \n",
                       target->ug_rank, *win_ptr, CSP_target_get_epoch_stat_name(target, ug_win));
         return mpi_errno;
     }
