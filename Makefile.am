@@ -47,6 +47,7 @@ libcasper_la_SOURCES = src/mpi_wrap.c	\
                     src/user/rma/csp_op_segment.c	\
                     src/user/rma/csp_bind_ghost.c	\
                     src/user/rma/csp_async_sched.c	\
+                    src/user/rma/csp_win_util.c	\
                     src/user/init/init.c \
                     src/user/init/initthread.c \
                     src/user/init/finalize.c \
