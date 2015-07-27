@@ -32,6 +32,7 @@ int *CSP_ALL_NODE_IDS = NULL;
 int CSP_MY_RANK_IN_WORLD = -1;
 
 CSP_define_win_cache;
+CSP_define_win_name_cache;
 
 /* TODO: Move load balancing option into env setting */
 CSP_env_param CSP_ENV;
@@ -440,6 +441,7 @@ int MPI_Init_thread(int *argc, char ***argv, int required, int *provided)
                       local_user_nprocs, CSP_MY_NODE_ID);
 
         CSP_init_win_cache();
+        CSP_init_win_name_cache();
         CSP_rm_reset_all();
     }
     /* Ghost processes */
@@ -513,6 +515,7 @@ int MPI_Init_thread(int *argc, char ***argv, int required, int *provided)
         free(CSP_USER_RANKS_IN_WORLD);
 
     CSP_destroy_win_cache();
+    CSP_destroy_win_name_cache();
 
     /* Reset global variables */
     CSP_COMM_USER_WORLD = MPI_COMM_NULL;

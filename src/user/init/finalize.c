@@ -55,6 +55,7 @@ int MPI_Finalize(void)
         PMPI_Group_free(&CSP_GROUP_USER_WORLD);
 
     CSP_destroy_win_cache();
+    CSP_destroy_win_name_cache();
 
     if (CSP_G_RANKS_IN_WORLD)
         free(CSP_G_RANKS_IN_WORLD);
