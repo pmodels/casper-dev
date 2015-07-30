@@ -29,10 +29,25 @@ noinst_PROGRAMS = \
 	epoch_type_assert	\
 	win_allocate_info	\
 	async_adapt	\
-	async_adapt_local_check
+	async_adapt_local_check	\
+	epoch_type_static_async_off	\
+	epoch_type_static_async_reset	\
+	epoch_type_static_async_off_reset
 
 async_adapt_local_check_SOURCES= async_adapt.c
 async_adapt_local_check_CFLAGS = -DUSE_LOCAL_CHECK
+
+# check win_allocate(async_config = off)
+epoch_type_static_async_off_SOURCES= epoch_type.c
+epoch_type_static_async_off_CFLAGS = -DCHECK_STATIC_ASYNC_OFF
+
+# check win_set_info
+epoch_type_static_async_reset_SOURCES= epoch_type.c
+epoch_type_static_async_reset_CFLAGS = -DCHECK_STATIC_ASYNC_RESET
+
+# check win_allocate(async_config = off) with win_set_info
+epoch_type_static_async_off_reset_SOURCES= epoch_type.c
+epoch_type_static_async_off_reset_CFLAGS = -DCHECK_STATIC_ASYNC_OFF -DCHECK_STATIC_ASYNC_RESET
 
 MPIEXEC=mpiexec
 

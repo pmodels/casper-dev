@@ -24,7 +24,7 @@ double *locbuf = NULL;
 double *checkbuf = NULL;
 int rank, nprocs;
 MPI_Win win = MPI_WIN_NULL;
-int ITER = 2;
+int ITER = 5;
 
 static void change_data(int nop, int x)
 {
@@ -96,15 +96,39 @@ static int check_data(int nop, int dst)
     return errs;
 }
 
+#ifdef CHECK_STATIC_ASYNC_RESET
+static void reset_async_config(MPI_Win test_win, MPI_Info win_info, int *prev_async_config)
+{
+    MPI_Info_set(win_info, (char *) "symmetric", (char *) "true");
+    if ((*prev_async_config) == 1) {    /* 1:on; 0:off; */
+        MPI_Info_set(win_info, (char *) "async_config", (char *) "off");
+    }
+    else {
+        MPI_Info_set(win_info, (char *) "async_config", (char *) "on");
+    }
+    MPI_Win_set_info(test_win, win_info);
+    (*prev_async_config) = !(*prev_async_config);
+}
+#endif
+
 /* Test win_allocate(epoch_type=lockall) with lockall epoch. */
 static int run_test1(int nop)
 {
     int i, x, errs = 0;
     int dst;
     MPI_Info win_info = MPI_INFO_NULL;
+#ifdef CHECK_STATIC_ASYNC_RESET
+    int prev_async_config = 1;  /* 1:on; 0:off; */
+#endif
 
     MPI_Info_create(&win_info);
     MPI_Info_set(win_info, (char *) "epoch_type", (char *) "lockall");
+#ifdef CHECK_STATIC_ASYNC_OFF
+    MPI_Info_set(win_info, (char *) "async_config", (char *) "off");
+#ifdef CHECK_STATIC_ASYNC_RESET
+    prev_async_config = 0;
+#endif
+#endif
 
     /* size in byte */
     MPI_Win_allocate(sizeof(double) * NUM_OPS, sizeof(double), win_info,
@@ -119,8 +143,8 @@ static int run_test1(int nop)
     MPI_Barrier(MPI_COMM_WORLD);
 
     MPI_Win_lock_all(0, win);
-    if (rank == 0) {
-        for (x = 0; x < ITER; x++) {
+    for (x = 0; x < ITER; x++) {
+        if (rank == 0) {
 
             /* change date in every interation */
             change_data(nop, x);
@@ -143,6 +167,11 @@ static int run_test1(int nop)
             /* check in every iteration */
             errs += check_data_all(nop);
         }
+
+#ifdef CHECK_STATIC_ASYNC_RESET
+        /* It is OK to skip barrier, since only rank 0 is issuing RMA. */
+        reset_async_config(win, win_info, &prev_async_config);
+#endif
     }
     MPI_Win_unlock_all(win);
 
@@ -164,9 +193,19 @@ static int run_test2(int nop)
     int i, x, errs = 0, errs_total = 0;
     int dst;
     MPI_Info win_info = MPI_INFO_NULL;
+#ifdef CHECK_STATIC_ASYNC_RESET
+    int prev_async_config = 1;  /* 1:on; 0:off; */
+#endif
 
     MPI_Info_create(&win_info);
     MPI_Info_set(win_info, (char *) "epoch_type", (char *) "lock|lockall");
+#ifdef CHECK_STATIC_ASYNC_OFF
+    MPI_Info_set(win_info, (char *) "async_config", (char *) "off");
+#ifdef CHECK_STATIC_ASYNC_RESET
+    prev_async_config = 0;
+#endif
+#endif
+
     MPI_Win_allocate(sizeof(double) * NUM_OPS, sizeof(double), win_info,
                      MPI_COMM_WORLD, &winbuf, &win);
 
@@ -178,9 +217,9 @@ static int run_test2(int nop)
     MPI_Win_unlock(rank, win);
 
     /* odd ranks send to even ranks */
-    if (rank % 2 == 0) {
-        dst = (rank + 1) % nprocs;
-        for (x = 0; x < ITER; x++) {
+    for (x = 0; x < ITER; x++) {
+        if (rank % 2 == 0) {
+            dst = (rank + 1) % nprocs;
             change_data(nop, x);
             MPI_Win_lock(MPI_LOCK_EXCLUSIVE, dst, 0, win);
 
@@ -200,7 +239,13 @@ static int run_test2(int nop)
 
             MPI_Win_unlock(dst, win);
         }
+#ifdef CHECK_STATIC_ASYNC_RESET
+        /* need ensure all issued operations on all processes are finished (like fence). */
+        MPI_Barrier(MPI_COMM_WORLD);
+        reset_async_config(win, win_info, &prev_async_config);
+#endif
     }
+
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_Allreduce(&errs, &errs_total, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 
@@ -227,9 +272,18 @@ static int run_test3(int nop)
     double max_result = 0.0;
     double sum_result = 0.0;
     MPI_Info win_info = MPI_INFO_NULL;
+#ifdef CHECK_STATIC_ASYNC_RESET
+    int prev_async_config = 1;  /* 1:on; 0:off; */
+#endif
 
     MPI_Info_create(&win_info);
     MPI_Info_set(win_info, (char *) "epoch_type", (char *) "lockall|pscw");
+#ifdef CHECK_STATIC_ASYNC_OFF
+    MPI_Info_set(win_info, (char *) "async_config", (char *) "off");
+#ifdef CHECK_STATIC_ASYNC_RESET
+    prev_async_config = 0;
+#endif
+#endif
     MPI_Win_allocate(sizeof(double) * 2, sizeof(double), win_info, MPI_COMM_WORLD, &winbuf, &win);
 
     /* reset window */
@@ -319,6 +373,10 @@ static int run_test3(int nop)
             /* notify source to start the next epoch. */
             MPI_Barrier(MPI_COMM_WORLD);
         }
+
+#ifdef CHECK_STATIC_ASYNC_RESET
+        reset_async_config(win, win_info, &prev_async_config);
+#endif
     }
 
     MPI_Allreduce(&errs, &errs_total, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
@@ -348,9 +406,18 @@ static int run_test4(int nop)
     int i, x, errs = 0, errs_total = 0;
     int dst;
     MPI_Info win_info = MPI_INFO_NULL;
+#ifdef CHECK_STATIC_ASYNC_RESET
+    int prev_async_config = 1;  /* 1:on; 0:off; */
+#endif
 
     MPI_Info_create(&win_info);
     MPI_Info_set(win_info, (char *) "epoch_type", (char *) "fence");
+#ifdef CHECK_STATIC_ASYNC_OFF
+    MPI_Info_set(win_info, (char *) "async_config", (char *) "off");
+#ifdef CHECK_STATIC_ASYNC_RESET
+    prev_async_config = 0;
+#endif
+#endif
     MPI_Win_allocate(sizeof(double) * NUM_OPS, sizeof(double), win_info, MPI_COMM_WORLD, &winbuf,
                      &win);
 
@@ -387,6 +454,9 @@ static int run_test4(int nop)
             winbuf[i] = 0.0;
         }
         MPI_Win_fence(0, win);
+#ifdef CHECK_STATIC_ASYNC_RESET
+        reset_async_config(win, win_info, &prev_async_config);
+#endif
     }
 
     if (errs > 0) {

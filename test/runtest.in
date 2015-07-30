@@ -62,5 +62,39 @@ for f in `cat ./testlist`;do
         exit
     fi
     echo ""
+    
+    np=10
+    nh=2
+    export CSP_NG=$nh
+    export CSP_ASYNC_CONFIG=off
+    echo "testing $f -np $np -nh $nh"
+    echo " with CSP_ASYNC_CONFIG=off ..."
+    exec 5>&1
+    output=$($MPIEXEC -np $np $path/$f | tee /dev/fd/5 )
+    rs="$(echo $output | grep "0 errors"  --count)"
+    if [ $rs != 1 ];then
+        echo "test failed !"
+        echo "$MPIEXEC -np $np $path/$f"
+        exit
+    fi
+    echo ""
+    unset CSP_ASYNC_CONFIG
+    
+    np=10
+    nh=2
+    export CSP_NG=$nh
+    export CSP_ASYNC_SCHED_LEVEL=anytime
+    echo "testing $f -np $np -nh $nh"
+    echo " with CSP_ASYNC_SCHED_LEVEL=anytime ..."
+    exec 5>&1
+    output=$($MPIEXEC -np $np $path/$f | tee /dev/fd/5 )
+    rs="$(echo $output | grep "0 errors"  --count)"
+    if [ $rs != 1 ];then
+        echo "test failed !"
+        echo "$MPIEXEC -np $np $path/$f"
+        exit
+    fi
+    echo ""
+    unset CSP_ASYNC_SCHED_LEVEL
 done
 echo "all passed"
