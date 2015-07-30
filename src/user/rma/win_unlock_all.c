@@ -114,40 +114,11 @@ int MPI_Win_unlock_all(MPI_Win win)
 
     if (!(ug_win->info_args.epoch_type & CSP_EPOCH_LOCK)) {
 
-        /* In lock_all only epoch, unlock all ghosts on the single window. */
-
-#ifdef CSP_ENABLE_SYNC_ALL_OPT
-
-        /* Optimization for MPI implementations that have optimized lock_all.
-         * However, user should be noted that, if MPI implementation issues lock messages
-         * for every target even if it does not have any operation, this optimization
-         * could lose performance and even lose asynchronous! */
-        CSP_DBG_PRINT("[%d]unlock_all(ug_win 0x%x)\n", user_rank, ug_win->ug_wins[0]);
-        mpi_errno = PMPI_Win_unlock_all(ug_win->ug_wins[0]);
-        if (mpi_errno != MPI_SUCCESS)
-            goto fn_fail;
-#else
-        mpi_errno = PMPI_Win_unlock_all(ug_win->ug_wins[0]);
-        if (mpi_errno != MPI_SUCCESS)
-            goto fn_fail;
-#if 0   /* segmentation fault */
-        for (i = 0; i < ug_win->num_g_ranks_in_ug; i++) {
-            mpi_errno = PMPI_Win_unlock(ug_win->g_ranks_in_ug[i], ug_win->ug_wins[0]);
-            if (mpi_errno != MPI_SUCCESS)
-                goto fn_fail;
-        }
-#endif
-#endif
-
-#ifdef CSP_ENABLE_LOCAL_LOCK_OPT
-#if 0   /* segmentation fault */
-        mpi_errno = CSP_win_unlock_self_impl(ug_win);
-        if (mpi_errno != MPI_SUCCESS)
-            goto fn_fail;
-#else
+        /* In lock_all only epoch, unlock_all will be issued on global window
+         * in win_free. */
+        CSP_DBG_PRINT("[%d]unlock_all(active_win 0x%x) (no actual unlock call)\n",
+                      user_rank, ug_win->active_win);
         ug_win->is_self_locked = 0;
-#endif
-#endif
     }
     else {
 
