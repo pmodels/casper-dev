@@ -60,6 +60,7 @@ int MPI_Win_lock(int lock_type, int target_rank, int assert, MPI_Win win)
 
     PMPI_Comm_rank(ug_win->user_comm, &user_rank);
     target->remote_lock_assert = assert;
+    target->remote_lock_type = lock_type;
     CSP_DBG_PRINT("[%d]lock(%d), MPI_MODE_NOCHECK %d(assert %d)\n", user_rank,
                   target_rank, (assert & MPI_MODE_NOCHECK) != 0, assert);
 
@@ -78,32 +79,38 @@ int MPI_Win_lock(int lock_type, int target_rank, int assert, MPI_Win win)
 
     /* Lock Ghost processes in corresponding ug-window of target process. */
 #ifdef CSP_ENABLE_SYNC_ALL_OPT
-    /* Optimization for MPI implementations that have optimized lock_all.
-     * However, user should be noted that, if MPI implementation issues lock messages
-     * for every target even if it does not have any operation, this optimization
-     * could lose performance and even lose asynchronous! */
+    /* lock_all cannot handle exclusive locks, thus should use only for shared lock or nocheck. */
+    if (target->remote_lock_type == MPI_LOCK_SHARED ||
+        target->remote_lock_assert & MPI_MODE_NOCHECK) {
+        /* Optimization for MPI implementations that have optimized lock_all.
+         * However, user should be noted that, if MPI implementation issues lock messages
+         * for every target even if it does not have any operation, this optimization
+         * could lose performance and even lose asynchronous! */
 
-    CSP_DBG_PRINT("[%d]lock_all(ug_win 0x%x), instead of target rank %d\n",
-                  user_rank, target->ug_win, target_rank);
-    mpi_errno = PMPI_Win_lock_all(assert, target->ug_win);
-    if (mpi_errno != MPI_SUCCESS)
-        goto fn_fail;
-#else
-    /* Lock every ghost on every window.
-     * Note that a ghost may be used on any window of this process for runtime
-     * load balancing whether it is binded to that segment or not. */
-    for (k = 0; k < CSP_ENV.num_g; k++) {
-        int target_g_rank_in_ug = target->g_ranks_in_ug[k];
-
-        CSP_DBG_PRINT("[%d]lock(Ghost(%d), ug_wins 0x%x), instead of "
-                      "target rank %d\n", user_rank, target_g_rank_in_ug,
-                      target->ug_win, target_rank);
-
-        mpi_errno = PMPI_Win_lock(lock_type, target_g_rank_in_ug, assert, target->ug_win);
+        CSP_DBG_PRINT("[%d]lock_all(ug_win 0x%x), instead of target rank %d\n",
+                      user_rank, target->ug_win, target_rank);
+        mpi_errno = PMPI_Win_lock_all(assert, target->ug_win);
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
     }
-#endif
+    else
+#endif /*end of CSP_ENABLE_SYNC_ALL_OPT */
+    {
+        /* Lock every ghost on every window.
+         * Note that a ghost may be used on any window of this process for runtime
+         * load balancing whether it is binded to that segment or not. */
+        for (k = 0; k < CSP_ENV.num_g; k++) {
+            int target_g_rank_in_ug = target->g_ranks_in_ug[k];
+
+            CSP_DBG_PRINT("[%d]lock(Ghost(%d), ug_wins 0x%x), instead of "
+                          "target rank %d\n", user_rank, target_g_rank_in_ug,
+                          target->ug_win, target_rank);
+
+            mpi_errno = PMPI_Win_lock(lock_type, target_g_rank_in_ug, assert, target->ug_win);
+            if (mpi_errno != MPI_SUCCESS)
+                goto fn_fail;
+        }
+    }
 
     ug_win->is_self_locked = 0;
 

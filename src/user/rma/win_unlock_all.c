@@ -108,10 +108,6 @@ int MPI_Win_unlock_all(MPI_Win win)
     PMPI_Comm_rank(ug_win->user_comm, &user_rank);
     PMPI_Comm_size(ug_win->user_comm, &user_nprocs);
 
-    for (i = 0; i < user_nprocs; i++) {
-        ug_win->targets[i].remote_lock_assert = 0;
-    }
-
     if (!(ug_win->info_args.epoch_type & CSP_EPOCH_LOCK)) {
 
         /* In lock_all only epoch, unlock_all will be issued on global window
@@ -137,7 +133,11 @@ int MPI_Win_unlock_all(MPI_Win win)
     }
 #endif
 
-    /* Reset epoch status. */
+    /* Reset epoch. */
+    for (i = 0; i < user_nprocs; i++) {
+        ug_win->targets[i].remote_lock_assert = 0;
+        ug_win->targets[i].remote_lock_type = 0;
+    }
     ug_win->epoch_stat = CSP_WIN_NO_EPOCH;
 
   fn_exit:
