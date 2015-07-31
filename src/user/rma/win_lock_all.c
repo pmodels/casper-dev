@@ -149,6 +149,7 @@ int MPI_Win_lock_all(int assert, MPI_Win win)
 
     for (i = 0; i < user_nprocs; i++) {
         ug_win->targets[i].remote_lock_assert = assert;
+        ug_win->targets[i].remote_lock_type = MPI_LOCK_SHARED;
     }
 
     CSP_DBG_PRINT("[%d]lock_all, MPI_MODE_NOCHECK %d(assert %d)\n", user_rank,

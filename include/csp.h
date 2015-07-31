@@ -310,6 +310,7 @@ typedef struct CSP_win_target {
     MPI_Aint *base_g_offsets;   /* CSP_ENV.num_g */
     int *g_ranks_in_ug;         /* CSP_ENV.num_g */
     int remote_lock_assert;
+    int remote_lock_type;
 
     int local_user_rank;        /* rank in local user communicator */
     int local_user_nprocs;

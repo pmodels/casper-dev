@@ -76,9 +76,10 @@ int MPI_Win_flush(int target_rank, MPI_Win win)
     }
 #endif
 
-    {
 #ifdef CSP_ENABLE_SYNC_ALL_OPT
-
+    /* lock_all cannot handle exclusive locks, thus should use only for shared lock or nocheck. */
+    if (target->remote_lock_type == MPI_LOCK_SHARED ||
+        target->remote_lock_assert & MPI_MODE_NOCHECK) {
         /* Optimization for MPI implementations that have optimized lock_all.
          * However, user should be noted that, if MPI implementation issues lock messages
          * for every target even if it does not have any operation, this optimization
@@ -88,8 +89,10 @@ int MPI_Win_flush(int target_rank, MPI_Win win)
         mpi_errno = PMPI_Win_flush_all(target->ug_win);
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
-#else
-
+    }
+    else
+#endif /*end of CSP_ENABLE_SYNC_ALL_OPT */
+    {
 #if !defined(CSP_ENABLE_RUNTIME_LOAD_OPT)
         /* RMA operations are only issued to the main ghost, so we only flush it. */
         /* TODO: track op issuing, only flush the ghosts which receive ops. */
@@ -129,7 +132,6 @@ int MPI_Win_flush(int target_rank, MPI_Win win)
                 goto fn_fail;
         }
 #endif /*end of CSP_ENABLE_RUNTIME_LOAD_OPT */
-#endif /*end of CSP_ENABLE_SYNC_ALL_OPT */
     }
 
 #if defined(CSP_ENABLE_RUNTIME_LOAD_OPT)
