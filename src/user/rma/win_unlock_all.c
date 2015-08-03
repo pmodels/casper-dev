@@ -9,11 +9,38 @@
 #include "csp.h"
 #include "csp_rma_local.h"
 
+/* Unlocks ghost processes for a given target.
+ * It is called by both WIN_UNLOCK and WIN_UNLOCK_ALL for mixed-lock mode. */
+int CSP_win_target_unlock_ghosts(int target_rank, CSP_win * ug_win)
+{
+    int mpi_errno = MPI_SUCCESS;
+    CSP_win_target *target = NULL;
+    int k;
+    int user_rank;
+
+    target = &(ug_win->targets[target_rank]);
+    PMPI_Comm_rank(ug_win->user_comm, &user_rank);
+
+    /* Unlock every ghost on every window for each target. */
+    for (k = 0; k < CSP_ENV.num_g; k++) {
+        int target_g_rank_in_ug = target->g_ranks_in_ug[k];
+
+        CSP_DBG_PRINT("[%d]unlock(Ghost(%d), ug_win 0x%x), instead of "
+                      "target rank %d\n", user_rank, target_g_rank_in_ug,
+                      target->ug_win, target_rank);
+        mpi_errno = PMPI_Win_unlock(target_g_rank_in_ug, target->ug_win);
+        if (mpi_errno != MPI_SUCCESS)
+            break;
+    }
+
+    return mpi_errno;
+}
+
 static int CSP_win_mixed_unlock_all_impl(CSP_win * ug_win)
 {
     int mpi_errno = MPI_SUCCESS;
     int user_rank, user_nprocs;
-    int i, k;
+    int i;
 
     PMPI_Comm_rank(ug_win->user_comm, &user_rank);
     PMPI_Comm_size(ug_win->user_comm, &user_nprocs);
@@ -31,27 +58,29 @@ static int CSP_win_mixed_unlock_all_impl(CSP_win * ug_win)
             goto fn_fail;
     }
 #else
-    for (i = 0; i < user_nprocs; i++) {
-#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-        /* only unlock target if it is in async-off state  */
-        if (ug_win->targets[i].async_stat == CSP_TARGET_ASYNC_OFF) {
-            CSP_DBG_PRINT("[%d]unlock(target(%d), ug_win 0x%x), instead of "
-                          "target rank %d\n", user_rank, ug_win->targets[i].ug_rank,
-                          ug_win->targets[i].ug_win, i);
-            mpi_errno = PMPI_Win_unlock(ug_win->targets[i].ug_rank, ug_win->targets[i].ug_win);
+    if (CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_PER_WIN) {
+        /* Unlock either user process or ghost in per-window scheduling. */
+        for (i = 0; i < user_nprocs; i++) {
+            if (ug_win->targets[i].async_stat == CSP_TARGET_ASYNC_ON) {
+                mpi_errno = CSP_win_target_unlock_ghosts(i, ug_win);
+                if (mpi_errno != MPI_SUCCESS)
+                    goto fn_fail;
+            }
+            else {
+                mpi_errno = CSP_win_target_unlock_user(i, ug_win);
+                if (mpi_errno != MPI_SUCCESS)
+                    goto fn_fail;
+            }
+        }
+    }
+    else {
+        /* Unlock both user process and ghost in higher scheduling */
+        for (i = 0; i < user_nprocs; i++) {
+            mpi_errno = CSP_win_target_unlock_ghosts(i, ug_win);
             if (mpi_errno != MPI_SUCCESS)
                 goto fn_fail;
-            continue;
-        }
-#endif
 
-        for (k = 0; k < CSP_ENV.num_g; k++) {
-            int target_g_rank_in_ug = ug_win->targets[i].g_ranks_in_ug[k];
-
-            CSP_DBG_PRINT("[%d]unlock(Ghost(%d), ug_win 0x%x), instead of "
-                          "target rank %d\n", user_rank, target_g_rank_in_ug,
-                          ug_win->targets[i].ug_win, i);
-            mpi_errno = PMPI_Win_unlock(target_g_rank_in_ug, ug_win->targets[i].ug_win);
+            mpi_errno = CSP_win_target_unlock_user(i, ug_win);
             if (mpi_errno != MPI_SUCCESS)
                 goto fn_fail;
         }
@@ -111,9 +140,14 @@ int MPI_Win_unlock_all(MPI_Win win)
     if (!(ug_win->info_args.epoch_type & CSP_EPOCH_LOCK)) {
 
         /* In lock_all only epoch, unlock_all will be issued on global window
-         * in win_free. */
+         * in win_free. We only need flush_all here.*/
         CSP_DBG_PRINT("[%d]unlock_all(active_win 0x%x) (no actual unlock call)\n",
                       user_rank, ug_win->active_win);
+
+        mpi_errno = CSP_win_flush_all(ug_win);
+        if (mpi_errno != MPI_SUCCESS)
+            goto fn_fail;
+
         ug_win->is_self_locked = 0;
     }
     else {
@@ -125,8 +159,8 @@ int MPI_Win_unlock_all(MPI_Win win)
     }
 
 #if defined(CSP_ENABLE_RUNTIME_LOAD_OPT)
-    int j;
     for (i = 0; i < user_nprocs; i++) {
+        int j;
         for (j = 0; j < ug_win->targets[i].num_segs; j++) {
             ug_win->targets[i].segs[j].main_lock_stat = CSP_MAIN_LOCK_RESET;
         }

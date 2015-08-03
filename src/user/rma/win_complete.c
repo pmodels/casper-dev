@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "csp.h"
+#include "csp_rma_local.h"
 
 static int CSP_send_pscw_complete_msg(int start_grp_size, CSP_win * ug_win)
 {
@@ -61,7 +62,7 @@ static int CSP_complete_flush(int start_grp_size CSP_ATTRIBUTE((unused)), CSP_wi
     int mpi_errno = MPI_SUCCESS;
     int user_rank;
     int i;
-
+    int is_self_flushed CSP_ATTRIBUTE((unused)) = 0;
     CSP_DBG_PRINT_FCNAME();
 
     PMPI_Comm_rank(ug_win->user_comm, &user_rank);
@@ -77,41 +78,41 @@ static int CSP_complete_flush(int start_grp_size CSP_ATTRIBUTE((unused)), CSP_wi
     mpi_errno = PMPI_Win_flush_all(ug_win->active_win);
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
+    is_self_flushed = 1;
 #else
+    for (i = 0; i < start_grp_size; i++) {
+        int target_rank = 0;
+        CSP_win_target *target = NULL;
 
-    /* Flush every ghost once in the single window.
-     * TODO: track op issuing, only flush the ghosts which receive ops. */
-    for (i = 0; i < ug_win->num_g_ranks_in_ug; i++) {
-        mpi_errno = PMPI_Win_flush(ug_win->g_ranks_in_ug[i], ug_win->active_win);
-        if (mpi_errno != MPI_SUCCESS)
-            goto fn_fail;
+        target_rank = ug_win->start_ranks_in_win_group[i];
+        target = &(ug_win->targets[target_rank]);
+
+        if (target->async_stat == CSP_TARGET_ASYNC_ON) {
+            /* only flush ghosts if async is on */
+            mpi_errno = CSP_win_target_flush_ghosts(target_rank, ug_win);
+            if (mpi_errno != MPI_SUCCESS)
+                goto fn_fail;
+        }
+        else {
+            /* only flush target if async is off. */
+            mpi_errno = CSP_win_target_flush_user(target_rank, ug_win, &is_self_flushed);
+            if (mpi_errno != MPI_SUCCESS)
+                goto fn_fail;
+        }
     }
 
-#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-    if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
-        /* flush targets which are in async-off state.
-         * Note that, for all-async-off case, RMA goes through normal window. */
+#ifdef CSP_ENABLE_LOCAL_LOCK_OPT
+    /* Need flush local target */
+    if (!is_self_flushed) {
         for (i = 0; i < start_grp_size; i++) {
-            if (ug_win->targets[i].async_stat == CSP_TARGET_ASYNC_OFF) {
-                mpi_errno = PMPI_Win_flush(ug_win->targets[i].ug_rank, ug_win->active_win);
+            if (ug_win->start_ranks_in_win_group[i] == user_rank) {
+                mpi_errno = PMPI_Win_flush(ug_win->my_rank_in_ug_comm, ug_win->active_win);
                 if (mpi_errno != MPI_SUCCESS)
                     goto fn_fail;
             }
         }
     }
 #endif
-
-#ifdef CSP_ENABLE_LOCAL_LOCK_OPT
-    /* Need flush local target */
-    for (i = 0; i < start_grp_size; i++) {
-        if (ug_win->start_ranks_in_win_group[i] == user_rank) {
-            mpi_errno = PMPI_Win_flush(ug_win->my_rank_in_ug_comm, ug_win->active_win);
-            if (mpi_errno != MPI_SUCCESS)
-                goto fn_fail;
-        }
-    }
-#endif
-
 #endif
 
   fn_exit:

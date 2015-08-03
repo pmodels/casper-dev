@@ -15,7 +15,6 @@ int MPI_Win_unlock(int target_rank, MPI_Win win)
     CSP_win_target *target;
     int mpi_errno = MPI_SUCCESS;
     int user_rank;
-    int k;
 
     CSP_DBG_PRINT_FCNAME();
     CSP_rm_count_start(CSP_RM_COMM_FREQ);
@@ -57,19 +56,6 @@ int MPI_Win_unlock(int target_rank, MPI_Win win)
 
     PMPI_Comm_rank(ug_win->user_comm, &user_rank);
 
-#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-    /* If target is in async-off state, simply lock target on the internal window */
-    if (target->async_stat == CSP_TARGET_ASYNC_OFF) {
-        mpi_errno = PMPI_Win_unlock(target->ug_rank, target->ug_win);
-        if (mpi_errno != MPI_SUCCESS)
-            goto fn_fail;
-
-        CSP_DBG_PRINT("[%d]unlock(ug_win 0x%x, target %d), instead of target rank %d\n",
-                      user_rank, target->ug_win, target->ug_rank, target_rank);
-        goto unlock_done;
-    }
-#endif
-
     /* Unlock all ghost processes in every ug-window of target process. */
 #ifdef CSP_ENABLE_SYNC_ALL_OPT
     /* lock_all cannot handle exclusive locks, thus should use only for shared lock or nocheck. */
@@ -85,24 +71,29 @@ int MPI_Win_unlock(int target_rank, MPI_Win win)
         mpi_errno = PMPI_Win_unlock_all(target->ug_win);
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
+
+        if (user_rank == target_rank)
+            ug_win->is_self_locked = 0;
     }
     else
 #endif /* end of CSP_ENABLE_SYNC_ALL_OPT */
     {
-        for (k = 0; k < CSP_ENV.num_g; k++) {
-            int target_g_rank_in_ug = target->g_ranks_in_ug[k];
-
-            CSP_DBG_PRINT("[%d]unlock(Ghost(%d), ug_win 0x%x), instead of "
-                          "target rank %d\n", user_rank, target_g_rank_in_ug,
-                          target->ug_win, target_rank);
-
-            mpi_errno = PMPI_Win_unlock(target_g_rank_in_ug, target->ug_win);
+        if (target->async_stat == CSP_TARGET_ASYNC_ON) {
+            /* unlock all ghosts. */
+            mpi_errno = CSP_win_target_unlock_ghosts(target_rank, ug_win);
+            if (mpi_errno != MPI_SUCCESS)
+                goto fn_fail;
+        }
+        else {
+            /* When async is off on that target, we only unlock the target process.
+             * Static per-coll scheduling must be collective, thus is invalid during a lock epoch. */
+            mpi_errno = CSP_win_target_unlock_user(target_rank, ug_win);
             if (mpi_errno != MPI_SUCCESS)
                 goto fn_fail;
         }
 
         /* If target is itself, we need also release the lock of local rank  */
-        if (user_rank == target_rank && ug_win->is_self_locked) {
+        if (user_rank == target_rank && ug_win->is_self_locked /*already unlocked */) {
             mpi_errno = CSP_win_unlock_self_impl(ug_win);
             if (mpi_errno != MPI_SUCCESS)
                 goto fn_fail;
@@ -115,10 +106,6 @@ int MPI_Win_unlock(int target_rank, MPI_Win win)
         target->segs[j].main_lock_stat = CSP_MAIN_LOCK_RESET;
     }
 #endif
-
-  unlock_done:
-    /* This label only used when asynchronous scheduling is enabled. */
-    CSP_ATTRIBUTE((unused));
 
     /* Reset per-target epoch. */
     target->epoch_stat = CSP_TARGET_NO_EPOCH;

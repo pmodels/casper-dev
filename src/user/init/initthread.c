@@ -125,6 +125,24 @@ static int CSP_initialize_env()
         }
     }
 
+    CSP_ENV.async_sched_level = CSP_ASYNC_SCHED_PER_WIN;
+    val = getenv("CSP_ASYNC_SCHED_LEVEL");
+    if (val && strlen(val)) {
+        if (!strncmp(val, "per-win", strlen("per-win"))) {
+            CSP_ENV.async_sched_level = CSP_ASYNC_SCHED_PER_WIN;
+        }
+        else if (!strncmp(val, "per-coll", strlen("per-coll"))) {
+            CSP_ENV.async_sched_level = CSP_ASYNC_SCHED_PER_COLL;
+        }
+        else if (!strncmp(val, "anytime", strlen("anytime"))) {
+            CSP_ENV.async_sched_level = CSP_ASYNC_SCHED_ANYTIME;
+        }
+        else {
+            fprintf(stderr, "Unknown CSP_ASYNC_SCHED_LEVEL %s\n", val);
+            return -1;
+        }
+    }
+
 #if defined(CSP_ENABLE_RUNTIME_LOAD_OPT)
     CSP_ENV.load_opt = CSP_LOAD_OPT_RANDOM;
 
@@ -214,11 +232,13 @@ static int CSP_initialize_env()
                        "    CSP_VERBOSE = %d (FILE %d) \n"
                        "    CSP_NG = %d \n"
                        "    CSP_LOCK_METHOD = %s \n"
-                       "    CSP_ASYNC_CONFIG = %s\n",
+                       "    CSP_ASYNC_CONFIG = %s\n"
+                       "    CSP_ASYNC_SCHED_LEVEL = %s\n",
                        CSP_ENV.verbose, CSP_ENV.file_verbose,
                        CSP_ENV.num_g,
                        (CSP_ENV.lock_binding == CSP_LOCK_BINDING_RANK) ? "rank" : "segment",
-                       CSP_get_async_config_name(CSP_ENV.async_config));
+                       CSP_get_async_config_name(CSP_ENV.async_config),
+                       CSP_get_async_level_name(CSP_ENV.async_sched_level));
 
         if (CSP_ENV.lock_binding == CSP_LOCK_BINDING_SEGMENT) {
             CSP_INFO_PRINT(1, "    CSP_SEG_SIZE = %d \n", CSP_ENV.seg_size);

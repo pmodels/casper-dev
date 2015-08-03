@@ -7,61 +7,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "csp.h"
+#include "csp_rma_local.h"
 
 static int CSP_fence_flush_all(CSP_win * ug_win)
 {
     int mpi_errno = MPI_SUCCESS;
-    int user_rank, user_nprocs;
-    int i;
 
-    CSP_DBG_PRINT_FCNAME();
-
-    PMPI_Comm_rank(ug_win->user_comm, &user_rank);
-    PMPI_Comm_size(ug_win->user_comm, &user_nprocs);
-
-    /* Flush all ghosts to finish the sequence of locally issued RMA operations */
-#ifdef CSP_ENABLE_SYNC_ALL_OPT
-
-    /* Optimization for MPI implementations that have optimized lock_all.
-     * However, user should be noted that, if MPI implementation issues lock messages
-     * for every target even if it does not have any operation, this optimization
-     * could lose performance and even lose asynchronous! */
-    CSP_DBG_PRINT("[%d]flush_all(active_win 0x%x)\n", user_rank, ug_win->active_win);
-    mpi_errno = PMPI_Win_flush_all(ug_win->active_win);
+    mpi_errno = CSP_win_flush_all(ug_win);
     if (mpi_errno != MPI_SUCCESS)
-        goto fn_fail;
-#else
-    /* TODO: track op issuing, only flush the ghosts which receive ops. */
-    for (i = 0; i < ug_win->num_g_ranks_in_ug; i++) {
-        mpi_errno = PMPI_Win_flush(ug_win->g_ranks_in_ug[i], ug_win->active_win);
-        if (mpi_errno != MPI_SUCCESS)
-            goto fn_fail;
-    }
-
-#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-    if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
-        /* flush targets which are in async-off state.
-         * Note that, for all-async-off case, RMA goes through normal window. */
-        for (i = 0; i < user_nprocs; i++) {
-            if (ug_win->targets[i].async_stat == CSP_TARGET_ASYNC_OFF) {
-                mpi_errno = PMPI_Win_flush(ug_win->targets[i].ug_rank, ug_win->active_win);
-                if (mpi_errno != MPI_SUCCESS)
-                    goto fn_fail;
-            }
-        }
-    }
-#endif
-
-#ifdef CSP_ENABLE_LOCAL_LOCK_OPT
-    mpi_errno = PMPI_Win_flush(ug_win->my_rank_in_ug_comm, ug_win->active_win);
-    if (mpi_errno != MPI_SUCCESS)
-        goto fn_fail;
-#endif
-
-#endif
+        return mpi_errno;
 
 #if defined(CSP_ENABLE_RUNTIME_LOAD_OPT)
-    int j;
+    int i, j;
     for (i = 0; i < user_nprocs; i++) {
         for (j = 0; j < ug_win->targets[i].num_segs; j++) {
             /* Runtime load balancing is allowed in fence epoch because
@@ -73,11 +30,7 @@ static int CSP_fence_flush_all(CSP_win * ug_win)
     }
 #endif
 
-  fn_exit:
     return mpi_errno;
-
-  fn_fail:
-    goto fn_exit;
 }
 
 int MPI_Win_fence(int assert, MPI_Win win)
@@ -122,6 +75,11 @@ int MPI_Win_fence(int assert, MPI_Win win)
     }
 #endif
 
+    /* Indicate epoch status.
+     * Later operations will be redirected to active_win (including the next fence_flush_all). */
+    ug_win->epoch_stat = CSP_WIN_EPOCH_FENCE;
+    ug_win->exp_epoch_stat = CSP_WIN_EXP_EPOCH_FENCE;
+
     /* Eliminate flush_all if user explicitly specifies no preceding RMA calls. */
     if ((assert & MPI_MODE_NOPRECEDE) == 0) {
         mpi_errno = CSP_fence_flush_all(ug_win);
@@ -153,13 +111,6 @@ int MPI_Win_fence(int assert, MPI_Win win)
     /* During fence epoch, it is allowed to access local target directly */
     ug_win->is_self_locked = 1;
 #endif
-
-    /* Indicate epoch status.
-     * Later operations will be redirected to active_win */
-    ug_win->epoch_stat = CSP_WIN_EPOCH_FENCE;
-
-    /* Indicate exposure epoch status. */
-    ug_win->exp_epoch_stat = CSP_WIN_EXP_EPOCH_FENCE;
 
   fn_exit:
     CSP_rm_count_end(CSP_RM_COMM_FREQ);

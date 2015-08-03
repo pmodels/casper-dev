@@ -29,7 +29,10 @@ const char *CSP_win_epoch_stat_name[4] = {
 };
 
 static unsigned long win_id = 0;
+
+/* for debug use-only */
 char CSP_epoch_types_name[128];
+char CSP_async_level_name[128];
 
 static int read_win_info(MPI_Info info, CSP_win * ug_win)
 {
@@ -48,25 +51,10 @@ static int read_win_info(MPI_Info info, CSP_win * ug_win)
         int info_flag = 0;
         char info_value[MPI_MAX_INFO_VAL + 1];
 
-        /* Check if user wants to turn off async */
-        memset(info_value, 0, sizeof(info_value));
-        mpi_errno = PMPI_Info_get(info, "async_config", MPI_MAX_INFO_VAL, info_value, &info_flag);
+        /* Check if user wants to update async config */
+        mpi_errno = CSP_win_get_asyc_config_info(info, &ug_win->info_args.async_config, NULL);
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
-
-        if (info_flag == 1) {
-            if (!strncmp(info_value, "off", strlen("off"))) {
-                ug_win->info_args.async_config = CSP_ASYNC_CONFIG_OFF;
-            }
-            else if (!strncmp(info_value, "on", strlen("on"))) {
-                ug_win->info_args.async_config = CSP_ASYNC_CONFIG_ON;
-            }
-#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-            else if (!strncmp(info_value, "auto", strlen("auto"))) {
-                ug_win->info_args.async_config = CSP_ASYNC_CONFIG_AUTO;
-            }
-#endif
-        }
 
         /* Check if we are allowed to ignore force-lock for local target,
          * require force-lock by default. */
@@ -138,10 +126,11 @@ static int read_win_info(MPI_Info info, CSP_win * ug_win)
             const char *async_config_name =
                 CSP_get_async_config_name(ug_win->info_args.async_config);
 
-            CSP_INFO_PRINT(2, "CASPER Window: %s \n", ug_win->info_args.win_name);
-            CSP_INFO_PRINT(4, "    no_local_load_store = %s\n"
+            CSP_INFO_PRINT(4, "CASPER Window: %s \n"
+                           "    no_local_load_store = %s\n"
                            "    epoch_type = %s\n"
                            "    async_config = %s\n",
+                           ug_win->info_args.win_name,
                            (ug_win->info_args.no_local_load_store ? "TRUE" : " FALSE"),
                            epoch_type_name, async_config_name);
 
@@ -602,9 +591,8 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
 
     int tmp_bcast_buf[2];
     MPI_Info shared_info = MPI_INFO_NULL;
-
+    CSP_target_async_stat my_async_stat = CSP_TARGET_ASYNC_NONE;
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-    CSP_target_async_stat my_async_stat = CSP_TARGET_ASYNC_ON;
     int all_targets_async_off = 1;
 #endif
 
@@ -662,8 +650,11 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     CSP_ra_update_async_stat(ug_win->info_args.async_config);
 #endif
 
-    /* If user turns off asynchronous redirection, simply return normal window; */
-    if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_OFF)
+    /* If user turns off asynchronous redirection in per-window scheduling level,
+     * simply return normal window. But for higher levels, we need always initialize the
+     * internal structures, since the asynchronous configuration may be changed during window. */
+    if (CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_PER_WIN &&
+        ug_win->info_args.async_config == CSP_ASYNC_CONFIG_OFF)
         goto fn_noasync;
 
     PMPI_Comm_group(user_comm, &ug_win->user_group);
@@ -686,9 +677,17 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
      * asynchronous configure with every target, since its value might be different. */
     if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
         my_async_stat = CSP_ra_sched_async_stat();
+        tmp_gather_cnt++;
     }
-    tmp_gather_cnt++;
+    else
 #endif
+    {
+        /* Locally set for all targets since the value is globally consistent. */
+        my_async_stat = (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_ON) ?
+            CSP_TARGET_ASYNC_ON : CSP_TARGET_ASYNC_OFF;
+        for (i = 0; i < user_nprocs; i++)
+            ug_win->targets[i].async_stat = my_async_stat;
+    }
 
     /* Gather users' disp_unit, size, ranks and node_id */
     tmp_gather_buf = calloc(user_nprocs * tmp_gather_cnt, sizeof(MPI_Aint));
@@ -700,7 +699,9 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     tmp_gather_buf[tmp_gather_cnt * user_rank + 5] = (MPI_Aint) ug_win->node_id;
     tmp_gather_buf[tmp_gather_cnt * user_rank + 6] = (MPI_Aint) user_local_nprocs;
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-    tmp_gather_buf[tmp_gather_cnt * user_rank + 7] = (MPI_Aint) my_async_stat;
+    if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
+        tmp_gather_buf[tmp_gather_cnt * user_rank + 7] = (MPI_Aint) my_async_stat;
+    }
 #endif
 
     mpi_errno = PMPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL,
@@ -716,9 +717,11 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
         ug_win->targets[i].node_id = (int) tmp_gather_buf[tmp_gather_cnt * i + 5];
         ug_win->targets[i].local_user_nprocs = (int) tmp_gather_buf[tmp_gather_cnt * i + 6];
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-        ug_win->targets[i].async_stat =
-            (CSP_target_async_stat) tmp_gather_buf[tmp_gather_cnt * i + 7];
-        all_targets_async_off &= (ug_win->targets[i].async_stat == CSP_TARGET_ASYNC_OFF);
+        if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
+            ug_win->targets[i].async_stat =
+                (CSP_target_async_stat) tmp_gather_buf[tmp_gather_cnt * i + 7];
+            all_targets_async_off &= (ug_win->targets[i].async_stat == CSP_TARGET_ASYNC_OFF);
+        }
 #endif
 
         /* Calculate the maximum number of processes per node */
@@ -747,58 +750,16 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     }
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-    if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
-        /* Only the root user prints a summary of the async status. */
-        if (user_rank == 0 && (CSP_ENV.verbose >= 3 || CSP_ENV.file_verbose >= 1)) {
-            int async_on_cnt = 0;
-            int async_off_cnt = 0;
-            for (i = 0; i < user_nprocs; i++) {
-                if (ug_win->targets[i].async_stat == CSP_TARGET_ASYNC_ON) {
-                    async_on_cnt++;
-                }
-                else {
-                    async_off_cnt++;
-                }
-            }
-            CSP_INFO_PRINT(3, "    Per-target async_config summary: on %d; off %d\n",
-                           async_on_cnt, async_off_cnt);
-            CSP_INFO_PRINT_FILE_APPEND(1, "    Per-target async_config summary: on %d; off %d\n",
-                                       async_on_cnt, async_off_cnt);
-        }
-
-        /* The root user prints out the frequency number on every user process. */
-        if (CSP_ENV.file_verbose >= 2) {
-            /* Gather frequency numbers to root user */
-            double *tmp_async_gather_buf = NULL;
-            tmp_async_gather_buf = CSP_calloc(3 * user_nprocs, sizeof(double));
-
-            tmp_async_gather_buf[3 * user_rank] = CSP_RM[CSP_RM_COMM_FREQ].last_freq * 1.0;
-            tmp_async_gather_buf[3 * user_rank + 1] = CSP_RM[CSP_RM_COMM_FREQ].last_time;
-            tmp_async_gather_buf[3 * user_rank + 2] = CSP_RM[CSP_RM_COMM_FREQ].last_interval;
-            mpi_errno = PMPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, tmp_async_gather_buf,
-                                       3, MPI_DOUBLE, user_comm);
-            if (mpi_errno != MPI_SUCCESS) {
-                free(tmp_async_gather_buf);
-                goto fn_fail;
-            }
-
-            if (user_rank == 0) {
-                CSP_INFO_PRINT_FILE_APPEND(2, "    Per-target async_config:\n");
-                for (i = 0; i < user_nprocs; i++)
-                    CSP_INFO_PRINT_FILE_APPEND(2, "    [%d] async stat: freq=%.0f(%.4f/%.4f)\n",
-                                               i, tmp_async_gather_buf[3 * i],
-                                               tmp_async_gather_buf[3 * i + 1],
-                                               tmp_async_gather_buf[3 * i + 2]);
-            }
-            free(tmp_async_gather_buf);
-        }
-    }
-#endif
-
-#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-    if (all_targets_async_off)
+    /* If all targets turn off asynchronous redirection in per-window scheduling level,
+     * simply return normal window. But again, for higher levels, we need always initialize
+     * the internal structures. */
+    if (CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_PER_WIN && all_targets_async_off)
         goto fn_noasync;
 #endif
+
+    /* Print asynchronous configuration. */
+    if (CSP_ENV.verbose >= 2 || CSP_ENV.file_verbose >= 1)
+        CSP_win_print_async_config(ug_win);
 
     /* Notify Ghosts start and create user root + ghosts communicator for
      * internal information exchange between users and ghosts. */

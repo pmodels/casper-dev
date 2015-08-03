@@ -97,9 +97,7 @@ static int CSP_accumulate_impl(const void *origin_addr, int origin_count,
 
     CSP_target_get_epoch_win(0, target, ug_win, win_ptr);
 
-#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-    /* If the target is async-off, directly send to the target via internal window.
-     * Note that, for all-async-off case, RMA goes through normal window. */
+    /* If the target is async-off, directly send to the target via internal window. */
     if (target->async_stat == CSP_TARGET_ASYNC_OFF) {
         mpi_errno = PMPI_Accumulate(origin_addr, origin_count, origin_datatype,
                                     target->ug_rank, target_disp, target_count, target_datatype,
@@ -109,7 +107,6 @@ static int CSP_accumulate_impl(const void *origin_addr, int origin_count,
                       target->ug_rank, *win_ptr, CSP_target_get_epoch_stat_name(target, ug_win));
         return mpi_errno;
     }
-#endif
 
     /* Should not do local RMA in accumulate because of atomicity issue */
 

@@ -179,6 +179,12 @@ typedef enum {
 #endif
 } CSP_async_config;
 
+typedef enum {
+    CSP_ASYNC_SCHED_PER_WIN,
+    CSP_ASYNC_SCHED_PER_COLL,
+    CSP_ASYNC_SCHED_ANYTIME,
+} CSP_async_sched_level;
+
 #define CSP_DEFAULT_SEG_SIZE 4096;
 #define CSP_DEFAULT_NG 1
 
@@ -209,6 +215,8 @@ typedef struct CSP_env_param {
     int verbose;                /* verbose level. print configuration information. */
     int file_verbose;           /* verbose level. print configuration information in files. */
     CSP_async_config async_config;
+
+    CSP_async_sched_level async_sched_level;
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
     /* runtime scheduling options for asynchronous progress configuration */
@@ -243,13 +251,11 @@ typedef enum {
     CSP_WIN_EXP_EPOCH_PSCW
 } CSP_win_exp_epoch_stat;
 
-#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
 typedef enum {
     CSP_TARGET_ASYNC_ON = 0,
     CSP_TARGET_ASYNC_OFF = 1,
     CSP_TARGET_ASYNC_NONE = 99  /* initial state */
 } CSP_target_async_stat;
-#endif
 
 typedef enum {
     CSP_FUNC_NULL,
@@ -327,9 +333,7 @@ typedef struct CSP_win_target {
     int num_segs;
 
     CSP_target_epoch_stat epoch_stat;   /* indicate which access epoch is opened for the target. */
-#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-    CSP_target_async_stat async_stat;   /*per-target async status when window async config is auto. */
-#endif
+    CSP_target_async_stat async_stat;   /* per-target async status. */
 } CSP_win_target;
 
 typedef struct CSP_win {
@@ -762,6 +766,24 @@ static inline const char *CSP_get_async_config_name(CSP_async_config async_confi
     return name;
 }
 
+extern char CSP_async_level_name[128];
+static inline const char *CSP_get_async_level_name(CSP_async_sched_level async_level)
+{
+    memset(CSP_async_level_name, 0, sizeof(CSP_async_level_name));
+    switch (async_level) {
+    case CSP_ASYNC_SCHED_PER_WIN:
+        sprintf(CSP_async_level_name, "per-win");
+        break;
+    case CSP_ASYNC_SCHED_PER_COLL:
+        sprintf(CSP_async_level_name, "per-coll");
+        break;
+    case CSP_ASYNC_SCHED_ANYTIME:
+        sprintf(CSP_async_level_name, "anytime");
+        break;
+    }
+    return (const char *) CSP_async_level_name;
+}
+
 extern char CSP_epoch_types_name[128];
 static inline const char *CSP_get_epoch_types_name(int epoch_types)
 {
@@ -942,11 +964,17 @@ extern int CSP_recv_pscw_complete_msg(int post_grp_size, CSP_win * ug_win, int b
 
 extern int CSP_win_release(CSP_win * ug_win);
 
+extern int CSP_win_print_async_config(CSP_win * ug_win);
+extern int CSP_win_get_asyc_config_info(MPI_Info info, CSP_async_config * async_config,
+                                        int *set_flag);
+extern int CSP_win_sched_async_config(CSP_win * ug_win);
+
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
 #define CSP_RUNTIME_ASYNC_SCHED_THR_DEFAULT_FREQ (50)
 
 extern void CSP_ra_update_async_stat(CSP_async_config async_config);
 extern CSP_target_async_stat CSP_ra_sched_async_stat();
+
 
 #else
 #define CSP_ra_sched_async_stat() {/*do nothing */}
