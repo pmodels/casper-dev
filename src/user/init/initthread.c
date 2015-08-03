@@ -199,6 +199,9 @@ static int CSP_initialize_env()
 #ifdef CSP_ENABLE_EPOCH_STAT_CHECK
                        "    EPOCH_STAT_CHECK (enabled) \n"
 #endif
+#if defined(CSP_ENABLE_SYNC_ALL_OPT)
+                       "    SYNC_ALL_OPT (enabled) \n"
+#endif
 #if defined(CSP_ENABLE_RUNTIME_LOAD_OPT)
                        "    RUMTIME_LOAD_OPT (enabled) \n"
 #endif
