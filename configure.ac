@@ -49,6 +49,19 @@ if test "$enable_runtime_load" = "yes"; then
    AC_DEFINE(CSP_ENABLE_RUNTIME_LOAD_OPT,1,[Define if enable runtime load balancing])
 fi
 
+# Dynamic adaptation
+AC_ARG_ENABLE(dynamic-adapt, AC_HELP_STRING([--enable-dynamic-adapt],[Enable Dynamic Adaptation]),
+                 [ enable_dynamic_adapt=$enableval ],
+                 [ enable_dynamic_adapt=no ])
+AC_MSG_CHECKING(dynamic adaptation support)
+AC_MSG_RESULT($enable_dynamic_adapt)
+if test "$enable_dynamic_adapt" = "yes"; then
+   AC_DEFINE(CSP_ENABLE_RUNTIME_ASYNC_SCHED,1,[Define if enable dynamic adaptation])
+   AC_DEFINE(CSP_ENABLE_RUNTIME_MONITOR,1,[Define if enable runtime monitoring])
+   # pass to test configure.
+   export CSP_ENABLE_RUNTIME_ASYNC_SCHED=1
+fi
+
 # Epoch statuc check
 AC_ARG_ENABLE(epochstat-check, AC_HELP_STRING([--disable-epochstat-check],[Disable epoch status check for better performance]),
                  [ enable_epochstat_check=$enableval ],
