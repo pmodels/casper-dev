@@ -42,18 +42,15 @@ int MPI_Win_set_info(MPI_Win win, MPI_Info info)
     /* This is a symmetric call on all processes with the same info value.
      * It is safe to reschedule asynchronous configuration for this window. */
     if (symmetric_flag && CSP_ENV.async_sched_level >= CSP_ASYNC_SCHED_PER_COLL) {
-        int set_flag = 0;
-
-        mpi_errno = CSP_win_get_asyc_config_info(info, &ug_win->info_args.async_config, &set_flag);
+        mpi_errno = CSP_win_get_asyc_config_info(info, &ug_win->info_args.async_config, NULL);
         if (mpi_errno != MPI_SUCCESS)
             return mpi_errno;
 
-        /* reschedule if user passed async_config info. */
-        if (set_flag == 1) {
-            mpi_errno = CSP_win_sched_async_config(ug_win);
-            if (mpi_errno != MPI_SUCCESS)
-                goto fn_fail;
-        }
+        /* always reschedule async_config, since no cost for static configuration，
+         * and could trigger dynamic adaptation. */
+        mpi_errno = CSP_win_sched_async_config(ug_win);
+        if (mpi_errno != MPI_SUCCESS)
+            goto fn_fail;
     }
 
   fn_exit:
