@@ -42,6 +42,7 @@ libcasper_la_SOURCES = src/mpi_wrap.c	\
                     src/user/rma/win_wait.c	\
                     src/user/rma/win_test.c	\
                     src/user/rma/win_complete.c	\
+                    src/user/rma/win_set_info.c	\
                     src/user/rma/win_get_attr.c	\
                     src/user/rma/csp_get_ghost.c	\
                     src/user/rma/csp_op_segment.c	\

@@ -9,15 +9,62 @@
 #include "csp.h"
 #include "csp_rma_local.h"
 
+/* Locks ghost processes for a given target.
+ * It is called by both WIN_UNLOCK and WIN_UNLOCK_ALL for mixed-lock mode. */
+int CSP_win_target_lock_ghosts(int lock_type, int assert, int target_rank, CSP_win * ug_win)
+{
+    int mpi_errno = MPI_SUCCESS;
+    CSP_win_target *target = NULL;
+    int user_rank;
+    int k, j;
+
+    target = &(ug_win->targets[target_rank]);
+    PMPI_Comm_rank(ug_win->user_comm, &user_rank);
+
+    /* Lock every ghost on every window for each target.
+     * Note that a ghost may be used on any window of this process for runtime
+     * load balancing whether it is bound to that segment or not. */
+    for (k = 0; k < CSP_ENV.num_g; k++) {
+        int target_g_rank_in_ug = 0;
+        int g_lock_type = MPI_LOCK_SHARED;
+        int g_assert = MPI_MODE_NOCHECK;
+
+        /* Only the main ghosts have permission check, other ghosts should just get
+         * shared & nocheck lock. Otherwise deadlock may happen in binding-free stage. */
+        for (j = 0; j < target->num_segs; j++) {
+            if (target->segs[j].main_g_off == k) {
+                g_lock_type = lock_type;
+                g_assert = assert;
+                break;
+            }
+        }
+
+        target_g_rank_in_ug = target->g_ranks_in_ug[k];
+
+        CSP_DBG_PRINT("[%d]lock(Ghost(%d), ug_win 0x%x, lock=%s, assert=%s), instead of "
+                      "target rank %d\n", user_rank, target_g_rank_in_ug, target->ug_win,
+                      CSP_get_lock_type_name(g_lock_type), CSP_get_assert_name(g_assert),
+                      target_rank);
+        mpi_errno = PMPI_Win_lock(g_lock_type, target_g_rank_in_ug, g_assert, target->ug_win);
+        if (mpi_errno != MPI_SUCCESS)
+            break;
+    }
+
+    return mpi_errno;
+}
+
 static int CSP_win_mixed_lock_all_impl(int assert, CSP_win * ug_win)
 {
     int mpi_errno = MPI_SUCCESS;
     int user_rank, user_nprocs;
-    int i, k;
+    int i;
     int is_local_lock_granted CSP_ATTRIBUTE((unused));
+    int is_g_locked = 0;
 
     PMPI_Comm_rank(ug_win->user_comm, &user_rank);
     PMPI_Comm_size(ug_win->user_comm, &user_nprocs);
+
+    ug_win->is_self_locked = 0;
 
 #ifdef CSP_ENABLE_SYNC_ALL_OPT
 
@@ -31,51 +78,43 @@ static int CSP_win_mixed_lock_all_impl(int assert, CSP_win * ug_win)
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
     }
+    is_g_locked = 1;
+    ug_win->is_self_locked = 1;
 #else
 
-    /* Lock every ghost on every window for each target.
-     * Note that a ghost may be used on any window of this process for runtime
-     * load balancing whether it is binded to that segment or not. */
-    for (i = 0; i < user_nprocs; i++) {
-#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-        /* only lock target if it is in async-off state.
-         * Note that, for all-async-off case, RMA goes through normal window. */
-        if (ug_win->targets[i].async_stat == CSP_TARGET_ASYNC_OFF) {
-            CSP_DBG_PRINT("[%d]lock(target(%d), ug_win 0x%x), instead of "
-                          "target rank %d\n", user_rank, ug_win->targets[i].ug_rank,
-                          ug_win->targets[i].ug_win, i);
-            mpi_errno = PMPI_Win_lock(MPI_LOCK_SHARED, ug_win->targets[i].ug_rank, assert,
-                                      ug_win->targets[i].ug_win);
+    if (CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_PER_WIN) {
+        /* Lock either user process or ghost in per-window scheduling. */
+        for (i = 0; i < user_nprocs; i++) {
+            if (ug_win->targets[i].async_stat == CSP_TARGET_ASYNC_ON) {
+                mpi_errno = CSP_win_target_lock_ghosts(MPI_LOCK_SHARED, assert, i, ug_win);
+                if (mpi_errno != MPI_SUCCESS)
+                    goto fn_fail;
+                if (user_rank == i)
+                    is_g_locked = 1;    /* force lock only when ghosts are locked */
+            }
+            else {
+                mpi_errno = CSP_win_target_lock_user(MPI_LOCK_SHARED, assert, i, ug_win);
+                if (mpi_errno != MPI_SUCCESS)
+                    goto fn_fail;
+            }
+        }
+    }
+    else {
+        /* Lock both user process and ghost in higher scheduling */
+        for (i = 0; i < user_nprocs; i++) {
+            mpi_errno = CSP_win_target_lock_ghosts(MPI_LOCK_SHARED, assert, i, ug_win);
             if (mpi_errno != MPI_SUCCESS)
                 goto fn_fail;
-            continue;
-        }
-#endif
 
-        for (k = 0; k < CSP_ENV.num_g; k++) {
-            int target_g_rank_in_ug = ug_win->targets[i].g_ranks_in_ug[k];
-
-            CSP_DBG_PRINT("[%d]lock(Ghost(%d), ug_win 0x%x), instead of "
-                          "target rank %d\n", user_rank, target_g_rank_in_ug,
-                          ug_win->targets[i].ug_win, i);
-            mpi_errno = PMPI_Win_lock(MPI_LOCK_SHARED, target_g_rank_in_ug, assert,
-                                      ug_win->targets[i].ug_win);
+            mpi_errno = CSP_win_target_lock_user(MPI_LOCK_SHARED, assert, i, ug_win);
             if (mpi_errno != MPI_SUCCESS)
                 goto fn_fail;
         }
+        is_g_locked = 1;        /* force lock only when ghosts are locked */
     }
 #endif
 
-    ug_win->is_self_locked = 0;
-
-#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-    /* If local rank is in async-off state, do not need force self lock */
-    if (ug_win->targets[user_rank].async_stat == CSP_TARGET_ASYNC_OFF) {
-        goto fn_exit;
-    }
-#endif
-
-    if (!ug_win->info_args.no_local_load_store &&
+    if (is_g_locked && !ug_win->info_args.no_local_load_store &&
         !(ug_win->targets[user_rank].remote_lock_assert & MPI_MODE_NOCHECK)) {
         /* We need grant the local lock (self-target) before return.
          * However, the actual locked processes are the Ghosts whose locks may be delayed by
@@ -93,7 +132,7 @@ static int CSP_win_mixed_lock_all_impl(int assert, CSP_win * ug_win)
 
     /* Lock local rank for memory consistency on local load/store operations.
      * If user passed no_local_load_store, this step can be skipped.*/
-    if (!ug_win->info_args.no_local_load_store) {
+    if (!ug_win->info_args.no_local_load_store && !ug_win->is_self_locked /* already locked */) {
         mpi_errno = CSP_win_lock_self_impl(ug_win);
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;

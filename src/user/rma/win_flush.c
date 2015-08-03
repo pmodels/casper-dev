@@ -16,7 +16,8 @@ int MPI_Win_flush(int target_rank, MPI_Win win)
     CSP_win_target *target;
     int mpi_errno = MPI_SUCCESS;
     int user_rank;
-    int j;
+    int is_self_flushed CSP_ATTRIBUTE((unused)) = 0;
+    int j CSP_ATTRIBUTE((unused));
 
     CSP_DBG_PRINT_FCNAME();
     CSP_rm_count_start(CSP_RM_COMM_FREQ);
@@ -38,19 +39,6 @@ int MPI_Win_flush(int target_rank, MPI_Win win)
 
     target = &(ug_win->targets[target_rank]);
 
-#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-    /* only flush target if it is in async-off state  */
-    if (target->async_stat == CSP_TARGET_ASYNC_OFF) {
-        mpi_errno = PMPI_Win_flush(target->ug_rank, target->ug_win);
-        if (mpi_errno != MPI_SUCCESS)
-            goto fn_fail;
-
-        CSP_DBG_PRINT("[%d]flush(ug_win 0x%x, target %d), instead of target rank %d\n",
-                      user_rank, target->ug_win, target->ug_rank, target_rank);
-        goto fn_exit;
-    }
-#endif
-
 #ifdef CSP_ENABLE_EPOCH_STAT_CHECK
     /* Check access epoch status.
      * The current epoch must be lock_all or lock.*/
@@ -64,74 +52,59 @@ int MPI_Win_flush(int target_rank, MPI_Win win)
 #endif
 
     PMPI_Comm_rank(ug_win->user_comm, &user_rank);
-#ifdef CSP_ENABLE_LOCAL_LOCK_OPT
-    if (user_rank == target_rank) {
-        /* If LOCAL_LOCK_OPT is enabled, PUT/GET may be issued to local
-         * target. Thus we need flush the local target as well.
-         * Note that ACC operations are always issued to main ghost,
-         * since atomicity and ordering issue. */
-        mpi_errno = CSP_win_flush_self_impl(ug_win);
-        if (mpi_errno != MPI_SUCCESS)
-            goto fn_fail;
-    }
-#endif
 
 #ifdef CSP_ENABLE_SYNC_ALL_OPT
     /* lock_all cannot handle exclusive locks, thus should use only for shared lock or nocheck. */
     if (target->remote_lock_type == MPI_LOCK_SHARED ||
         target->remote_lock_assert & MPI_MODE_NOCHECK) {
+
         /* Optimization for MPI implementations that have optimized lock_all.
          * However, user should be noted that, if MPI implementation issues lock messages
          * for every target even if it does not have any operation, this optimization
          * could lose performance and even lose asynchronous! */
-        CSP_DBG_PRINT("[%d]flush_all(ug_win 0x%x), instead of target rank %d\n",
-                      user_rank, target->ug_win, target_rank);
-        mpi_errno = PMPI_Win_flush_all(target->ug_win);
-        if (mpi_errno != MPI_SUCCESS)
-            goto fn_fail;
+        if (ug_win->info_args.epoch_type & CSP_EPOCH_LOCK) {
+            CSP_DBG_PRINT("[%d]flush_all(ug_win 0x%x), instead of target rank %d\n",
+                          user_rank, target->ug_win, target_rank);
+            mpi_errno = PMPI_Win_flush_all(target->ug_win);
+            if (mpi_errno != MPI_SUCCESS)
+                goto fn_fail;
+        }
+        else {
+            CSP_DBG_PRINT("[%d]flush_all(active_win 0x%x), instead of target rank %d\n",
+                          user_rank, ug_win->active_win);
+            mpi_errno = PMPI_Win_flush_all(ug_win->active_win);
+            if (mpi_errno != MPI_SUCCESS)
+                goto fn_fail;
+        }
     }
     else
 #endif /*end of CSP_ENABLE_SYNC_ALL_OPT */
     {
-#if !defined(CSP_ENABLE_RUNTIME_LOAD_OPT)
-        /* RMA operations are only issued to the main ghost, so we only flush it. */
-        /* TODO: track op issuing, only flush the ghosts which receive ops. */
-        for (j = 0; j < target->num_segs; j++) {
-            int main_g_off = target->segs[j].main_g_off;
-            int target_g_rank_in_ug = target->g_ranks_in_ug[main_g_off];
-            CSP_DBG_PRINT("[%d]flush(Ghost(%d), ug_wins 0x%x), instead of "
-                          "target rank %d seg %d\n", user_rank, target_g_rank_in_ug,
-                          target->segs[j].ug_win, target_rank, j);
-
-            mpi_errno = PMPI_Win_flush(target_g_rank_in_ug, target->segs[j].ug_win);
+        if (target->async_stat == CSP_TARGET_ASYNC_ON) {
+            /* only flush ghosts if async is on */
+            mpi_errno = CSP_win_target_flush_ghosts(target_rank, ug_win);
+            if (mpi_errno != MPI_SUCCESS)
+                goto fn_fail;
+        }
+        else {
+            /* only flush target if async is off.
+             * All issued operations to ghost process must be already completed before off. */
+            mpi_errno = CSP_win_target_flush_user(target_rank, ug_win, &is_self_flushed);
             if (mpi_errno != MPI_SUCCESS)
                 goto fn_fail;
         }
 
-#else
-        /* RMA operations may be distributed to all ghosts, so we should
-         * flush all ghosts on all windows.
-         *
-         * Note that some flushes could be eliminated before the main lock of a
-         * segment granted (see above). However, we have to loop all the segments
-         * in order to check each lock status, and we may flush the same ghost
-         * on the same window twice if the lock is granted on that segment.
-         * i.e., flush (H0, win0) and (H1, win0) twice for seg0 and seg1.
-         *
-         * Consider flush does nothing if no operations on that target in most
-         * MPI implementation, simpler code is better */
-        int k;
-        for (k = 0; k < CSP_ENV.num_g; k++) {
-            int target_g_rank_in_ug = target->g_ranks_in_ug[k];
-            CSP_DBG_PRINT("[%d]flush(Ghost(%d), ug_wins 0x%x), instead of "
-                          "target rank %d\n", user_rank, target_g_rank_in_ug,
-                          target->ug_win, target_rank);
-
-            mpi_errno = PMPI_Win_flush(target_g_rank_in_ug, target->ug_win);
+#ifdef CSP_ENABLE_LOCAL_LOCK_OPT
+        if (user_rank == target_rank && !is_self_flushed) {
+            /* If LOCAL_LOCK_OPT is enabled, PUT/GET may be issued to local
+             * target. Thus we need flush the local target as well.
+             * Note that ACC operations are always issued to main ghost,
+             * since atomicity and ordering issue. */
+            mpi_errno = CSP_win_flush_self_impl(ug_win);
             if (mpi_errno != MPI_SUCCESS)
                 goto fn_fail;
         }
-#endif /*end of CSP_ENABLE_RUNTIME_LOAD_OPT */
+#endif
     }
 
 #if defined(CSP_ENABLE_RUNTIME_LOAD_OPT)
