@@ -106,6 +106,13 @@ int MPI_Win_fence(int assert, MPI_Win win)
             goto fn_fail;
     }
 
+    if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO &&
+        CSP_ENV.async_sched_level >= CSP_ASYNC_SCHED_PER_COLL) {
+        mpi_errno = CSP_win_sched_async_config(ug_win);
+        if (mpi_errno != MPI_SUCCESS)
+            goto fn_fail;
+    }
+
     ug_win->is_self_locked = 0;
 #ifdef CSP_ENABLE_LOCAL_LOCK_OPT
     /* During fence epoch, it is allowed to access local target directly */
