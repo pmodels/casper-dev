@@ -49,6 +49,19 @@ AC_CHECK_TYPES([cpu_set_t],,,[[#include <sched.h>]])
 # check for attribute support
 PAC_C_GNU_ATTRIBUTE
 
+# Dynamic adaptation
+AC_ARG_ENABLE(dynamic-adapt, AC_HELP_STRING([--enable-dynamic-adapt-test],[Enable Dynamic Adaptation Tests]),
+                 [ enable_dynamic_adapt_test=$enableval ],
+                 [ enable_dynamic_adapt_test=no ])
+AC_MSG_CHECKING(enabel dynamic adaptation tests)
+AC_MSG_RESULT($enable_dynamic_adapt_test)
+AM_CONDITIONAL(ENABLE_DA_TEST_COND, [test "$enable_dynamic_adapt_test" = "yes"])
+if test "$enable_dynamic_adapt_test" = "yes"; then
+    ENABLE_DA_TEST=1
+    AC_DEFINE(ENABLE_DA_TEST,1,[Define if enable dynamic adaptation tests])
+    AC_SUBST(ENABLE_DA_TEST)
+fi
+
 AC_CONFIG_FILES([Makefile])
 AC_CONFIG_FILES([perf/Makefile])
 AC_CONFIG_FILES([testlist])

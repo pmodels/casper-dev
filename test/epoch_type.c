@@ -99,15 +99,27 @@ static int check_data(int nop, int dst)
 #ifdef CHECK_STATIC_ASYNC_RESET
 static void reset_async_config(MPI_Win test_win, MPI_Info win_info, int *prev_async_config)
 {
+#ifdef ENABLE_DA_TEST
+    int async_config_num = 3;   /* 2:auto; 1:on; 0:off; */
+#else
+    int async_config_num = 2;   /* 1:on; 0:off; */
+#endif
+
+    (*prev_async_config) = ((*prev_async_config) + 1) % async_config_num;
+
     MPI_Info_set(win_info, (char *) "symmetric", (char *) "true");
-    if ((*prev_async_config) == 1) {    /* 1:on; 0:off; */
+    if ((*prev_async_config) == 0) {
         MPI_Info_set(win_info, (char *) "async_config", (char *) "off");
     }
+#ifdef ENABLE_DA_TEST
+    else if ((*prev_async_config) == 2) {
+        MPI_Info_set(win_info, (char *) "async_config", (char *) "auto");
+    }
+#endif
     else {
         MPI_Info_set(win_info, (char *) "async_config", (char *) "on");
     }
     MPI_Win_set_info(test_win, win_info);
-    (*prev_async_config) = !(*prev_async_config);
 }
 #endif
 
@@ -118,7 +130,11 @@ static int run_test1(int nop)
     int dst;
     MPI_Info win_info = MPI_INFO_NULL;
 #ifdef CHECK_STATIC_ASYNC_RESET
+#ifdef ENABLE_DA_TEST
+    int prev_async_config = 2;  /* 2:auto; 1:on; 0:off; */
+#else
     int prev_async_config = 1;  /* 1:on; 0:off; */
+#endif
 #endif
 
     MPI_Info_create(&win_info);
@@ -194,7 +210,11 @@ static int run_test2(int nop)
     int dst;
     MPI_Info win_info = MPI_INFO_NULL;
 #ifdef CHECK_STATIC_ASYNC_RESET
+#ifdef ENABLE_DA_TEST
+    int prev_async_config = 2;  /* 2:auto; 1:on; 0:off; */
+#else
     int prev_async_config = 1;  /* 1:on; 0:off; */
+#endif
 #endif
 
     MPI_Info_create(&win_info);
@@ -273,7 +293,11 @@ static int run_test3(int nop)
     double sum_result = 0.0;
     MPI_Info win_info = MPI_INFO_NULL;
 #ifdef CHECK_STATIC_ASYNC_RESET
+#ifdef ENABLE_DA_TEST
+    int prev_async_config = 2;  /* 2:auto; 1:on; 0:off; */
+#else
     int prev_async_config = 1;  /* 1:on; 0:off; */
+#endif
 #endif
 
     MPI_Info_create(&win_info);
@@ -407,7 +431,11 @@ static int run_test4(int nop)
     int dst;
     MPI_Info win_info = MPI_INFO_NULL;
 #ifdef CHECK_STATIC_ASYNC_RESET
+#ifdef ENABLE_DA_TEST
+    int prev_async_config = 2;  /* 2:auto; 1:on; 0:off; */
+#else
     int prev_async_config = 1;  /* 1:on; 0:off; */
+#endif
 #endif
 
     MPI_Info_create(&win_info);

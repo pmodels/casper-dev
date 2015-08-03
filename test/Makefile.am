@@ -52,5 +52,5 @@ epoch_type_static_async_off_reset_CFLAGS = -DCHECK_STATIC_ASYNC_OFF -DCHECK_STAT
 MPIEXEC=mpiexec
 
 testing:
-	./runtest 
+	./runtest
 	

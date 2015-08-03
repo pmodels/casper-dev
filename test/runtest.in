@@ -1,5 +1,6 @@
 #!/bin/bash
 
+ENABLE_DA_TEST=@ENABLE_DA_TEST@
 path=$(pwd)
 
 if [ "x$MPIEXEC" = "x" ]; then
@@ -101,6 +102,26 @@ do
     echo "set CSP_ASYNC_SCHED_LEVEL=anytime"
     exec_program $np $nh $f
     unset CSP_ASYNC_SCHED_LEVEL
+
+    # run all tests with dynamic adaptation.
+    # note that per-win and anytime levels use different internal implementation,
+    # thus we need to test them separately. 
+    if [ "x$ENABLE_DA_TEST" = "x1" ]; then
+        np=10
+        nh=2
+
+        export CSP_ASYNC_CONFIG=auto
+        echo "set CSP_ASYNC_CONFIG=auto"
+        exec_program $np $nh $f
+        unset CSP_ASYNC_CONFIG
+
+        export CSP_ASYNC_CONFIG=auto
+        export CSP_ASYNC_SCHED_LEVEL=anytime
+        echo "set CSP_ASYNC_CONFIG=auto, CSP_ASYNC_SCHED_LEVEL=anytime"
+        exec_program $np $nh $f
+        unset CSP_ASYNC_CONFIG
+        unset CSP_ASYNC_SCHED_LEVEL
+    fi
 
     let i+=1
 done
