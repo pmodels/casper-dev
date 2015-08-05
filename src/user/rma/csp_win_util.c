@@ -219,6 +219,7 @@ int CSP_win_sched_async_config(CSP_win * ug_win)
     }
 
     if (user_rank == 0 && CSP_ENV.verbose >= 2) {
+        CSP_INFO_PRINT(2, "[update] ");
         CSP_win_print_async_config(ug_win);
     }
 

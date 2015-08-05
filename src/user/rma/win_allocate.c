@@ -758,6 +758,8 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
 #endif
 
     /* Print asynchronous configuration. */
+    if (CSP_ENV.verbose >= 2 && user_rank == 0)
+        CSP_INFO_PRINT(2, "[allocate] ");
     if (CSP_ENV.verbose >= 2 || CSP_ENV.file_verbose >= 1)
         CSP_win_print_async_config(ug_win);
 
