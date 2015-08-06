@@ -743,12 +743,6 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     }
 #endif
 
-    if (user_rank == 0) {
-        CSP_INFO_PRINT(4, "    size(KB) = %ld, disp_unit = %d\n\n", size / 1024, disp_unit);
-        CSP_INFO_PRINT_FILE_APPEND(1, "    size(KB) = %ld, disp_unit = %d\n\n", size / 1024,
-                                   disp_unit);
-    }
-
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
     /* If all targets turn off asynchronous redirection in per-window scheduling level,
      * simply return normal window. But again, for higher levels, we need always initialize
@@ -756,6 +750,12 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     if (CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_PER_WIN && all_targets_async_off)
         goto fn_noasync;
 #endif
+
+    if (user_rank == 0) {
+        CSP_INFO_PRINT(4, "    size(KB) = %ld, disp_unit = %d\n\n", size / 1024, disp_unit);
+        CSP_INFO_PRINT_FILE_APPEND(1, "    size(KB) = %ld, disp_unit = %d\n\n", size / 1024,
+                                   disp_unit);
+    }
 
     /* Print asynchronous configuration. */
     if (CSP_ENV.verbose >= 2 && user_rank == 0)
@@ -918,6 +918,17 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
   fn_noasync:
     mpi_errno = PMPI_Win_allocate(size, disp_unit, info, user_comm, baseptr, win);
     CSP_DBG_PRINT("Async is turned off in win_allocate, return normal win 0x%x\n", *win);
+
+    PMPI_Comm_rank(user_comm, &user_rank);
+    if (user_rank == 0) {
+        CSP_INFO_PRINT(4, "    size(KB) = %ld, disp_unit = %d\n\n", size / 1024, disp_unit);
+        CSP_INFO_PRINT_FILE_APPEND(1, "    size(KB) = %ld, disp_unit = %d\n\n", size / 1024,
+                                   disp_unit);
+
+        /* Print asynchronous configuration. */
+        CSP_INFO_PRINT(2, "[allocate] CASPER Window: %s target async_config: all %s\n",
+                       ug_win->info_args.win_name, "off");
+    }
 
     /* cache casper window name, thus we can still debug on it even no internal window. */
     CSP_cache_win_name((*win), ug_win->info_args.win_name);
