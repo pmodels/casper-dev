@@ -218,10 +218,11 @@ int CSP_win_sched_async_config(CSP_win * ug_win)
             ug_win->targets[i].async_stat = my_async_stat;
     }
 
-    if (user_rank == 0 && CSP_ENV.verbose >= 2) {
+    if (CSP_ENV.verbose >= 2 && user_rank == 0)
         CSP_INFO_PRINT(2, "[update] ");
+
+    if (CSP_ENV.verbose >= 2 || CSP_ENV.file_verbose >= 1)
         CSP_win_print_async_config(ug_win);
-    }
 
   fn_exit:
     if (user_rank == 0)
