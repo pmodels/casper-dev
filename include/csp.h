@@ -180,6 +180,11 @@ typedef enum {
 } CSP_async_config;
 
 typedef enum {
+    CSP_ASYNC_CONFIG_PHASE_LOCAL_UPDATE = 1,
+    CSP_ASYNC_CONFIG_PHASE_REMOTE_EXCHANGE = 2
+} CSP_async_config_phase;
+
+typedef enum {
     CSP_ASYNC_SCHED_PER_WIN,
     CSP_ASYNC_SCHED_PER_COLL,
     CSP_ASYNC_SCHED_ANYTIME,
@@ -279,6 +284,7 @@ struct CSP_win_info_args {
     unsigned short no_local_load_store;
     int epoch_type;
     CSP_async_config async_config;
+    int async_config_phases;
     char win_name[MPI_MAX_OBJECT_NAME + 1];
 };
 
@@ -966,18 +972,20 @@ extern int CSP_win_release(CSP_win * ug_win);
 
 extern int CSP_win_print_async_config(CSP_win * ug_win);
 extern int CSP_win_get_async_config_info(MPI_Info info, CSP_async_config * async_config,
-                                         int *set_flag);
+                                         int *async_config_phases, int *set_flag);
 extern int CSP_win_sched_async_config(CSP_win * ug_win);
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
 #define CSP_RUNTIME_ASYNC_SCHED_THR_DEFAULT_FREQ (50)
 
 extern void CSP_ra_update_async_stat(CSP_async_config async_config);
-extern CSP_target_async_stat CSP_ra_sched_async_stat();
+extern void CSP_ra_sched_async_stat();
+extern CSP_target_async_stat CSP_ra_get_async_stat();
 
 
 #else
 #define CSP_ra_sched_async_stat() {/*do nothing */}
+#define CSP_ra_get_async_stat() {/*do nothing */}
 
 #endif /* end of CSP_ENABLE_RUNTIME_ASYNC_SCHED */
 

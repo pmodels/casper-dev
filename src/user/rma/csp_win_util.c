@@ -64,7 +64,8 @@ void CSP_win_dump_async_config(MPI_Win win, const char *fname)
  * Get asynchronous configuration from info parameter.
  * This call is also in by win_allocate.
  */
-int CSP_win_get_async_config_info(MPI_Info info, CSP_async_config * async_config, int *set_flag)
+int CSP_win_get_async_config_info(MPI_Info info, CSP_async_config * async_config,
+                                  int *async_config_phases, int *set_flag)
 {
     int mpi_errno = MPI_SUCCESS;
     int tmp_set_flag = 0;
@@ -94,6 +95,28 @@ int CSP_win_get_async_config_info(MPI_Info info, CSP_async_config * async_config
             }
 #endif
         }
+
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+        if (async_config_phases != NULL) {
+            (*async_config_phases) = CSP_ASYNC_CONFIG_PHASE_LOCAL_UPDATE |
+                CSP_ASYNC_CONFIG_PHASE_REMOTE_EXCHANGE;
+
+            memset(info_value, 0, sizeof(info_value));
+            mpi_errno = PMPI_Info_get(info, "async_config_phases",
+                                      MPI_MAX_INFO_VAL, info_value, &info_flag);
+            if (mpi_errno != MPI_SUCCESS)
+                return mpi_errno;
+
+            if (info_flag == 1) {
+                if (!strncmp(info_value, "local-update", strlen("local-update"))) {
+                    (*async_config_phases) = CSP_ASYNC_CONFIG_PHASE_LOCAL_UPDATE;
+                }
+                else if (!strncmp(info_value, "remote-exchange", strlen("remote-exchange"))) {
+                    (*async_config_phases) = CSP_ASYNC_CONFIG_PHASE_REMOTE_EXCHANGE;
+                }
+            }
+        }
+#endif
     }
 
     if (set_flag != NULL) {
@@ -192,21 +215,27 @@ int CSP_win_sched_async_config(CSP_win * ug_win)
     /* If runtime scheduling is enabled for this window, we exchange the
      * asynchronous configure with every target, since its value might be different. */
     if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
+        if (ug_win->info_args.async_config_phases & CSP_ASYNC_CONFIG_PHASE_LOCAL_UPDATE) {
+            /* reschedule my status according to runtime monitored data. */
+            CSP_ra_sched_async_stat();
+        }
 
-        /* get my status according to runtime monitored data. */
-        my_async_stat = CSP_ra_sched_async_stat();
+        if (ug_win->info_args.async_config_phases & CSP_ASYNC_CONFIG_PHASE_REMOTE_EXCHANGE) {
+            /* read my current status. */
+            my_async_stat = CSP_ra_get_async_stat();
 
-        /* exchange with all targets. */
-        tmp_gather_buf = calloc(user_nprocs, sizeof(MPI_Aint));
-        tmp_gather_buf[user_rank] = (MPI_Aint) my_async_stat;
+            /* exchange with all targets. */
+            tmp_gather_buf = calloc(user_nprocs, sizeof(MPI_Aint));
+            tmp_gather_buf[user_rank] = (MPI_Aint) my_async_stat;
 
-        mpi_errno = PMPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL,
-                                   tmp_gather_buf, 1, MPI_AINT, ug_win->user_comm);
-        if (mpi_errno != MPI_SUCCESS)
-            goto fn_fail;
+            mpi_errno = PMPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL,
+                                       tmp_gather_buf, 1, MPI_AINT, ug_win->user_comm);
+            if (mpi_errno != MPI_SUCCESS)
+                goto fn_fail;
 
-        for (i = 0; i < user_nprocs; i++)
-            ug_win->targets[i].async_stat = (CSP_target_async_stat) tmp_gather_buf[i];
+            for (i = 0; i < user_nprocs; i++)
+                ug_win->targets[i].async_stat = (CSP_target_async_stat) tmp_gather_buf[i];
+        }
     }
     else
 #endif
@@ -218,8 +247,14 @@ int CSP_win_sched_async_config(CSP_win * ug_win)
             ug_win->targets[i].async_stat = my_async_stat;
     }
 
-    if (CSP_ENV.verbose >= 2 && user_rank == 0)
-        CSP_INFO_PRINT(2, "[update] ");
+    if (CSP_ENV.verbose >= 2 && user_rank == 0) {
+        if (ug_win->info_args.async_config_phases == CSP_ASYNC_CONFIG_PHASE_REMOTE_EXCHANGE) {
+            CSP_INFO_PRINT(2, "[remote-exchange] ");
+        }
+        else {
+            CSP_INFO_PRINT(2, "[update] ");
+        }
+    }
 
     if (CSP_ENV.verbose >= 2 || CSP_ENV.file_verbose >= 1)
         CSP_win_print_async_config(ug_win);

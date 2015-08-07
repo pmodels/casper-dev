@@ -28,7 +28,17 @@ void CSP_ra_update_async_stat(CSP_async_config async_config)
     }
 }
 
-CSP_target_async_stat CSP_ra_sched_async_stat()
+/* Get current asynchronous status. */
+CSP_target_async_stat CSP_ra_get_async_stat()
+{
+    return CSP_MY_ASYNC_STAT;
+}
+
+/* Reschedule local asynchronous status according to runtime profiling data.
+ * Note that we separate rescheduling and getting functions in order to
+ * allow processes to locally reschedule once, and remotely exchange for
+ * different windows multiple-times with the same status. */
+void CSP_ra_sched_async_stat()
 {
     double interval;
     int freq = 0;
@@ -56,8 +66,6 @@ CSP_target_async_stat CSP_ra_sched_async_stat()
     CSP_RM[CSP_RM_COMM_FREQ].last_freq = freq;
 
     CSP_rm_reset(CSP_RM_COMM_FREQ);
-
-    return CSP_MY_ASYNC_STAT;
 }
 
 #endif
