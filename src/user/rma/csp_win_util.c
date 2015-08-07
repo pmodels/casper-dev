@@ -64,7 +64,7 @@ void CSP_win_dump_async_config(MPI_Win win, const char *fname)
  * Get asynchronous configuration from info parameter.
  * This call is also in by win_allocate.
  */
-int CSP_win_get_asyc_config_info(MPI_Info info, CSP_async_config * async_config, int *set_flag)
+int CSP_win_get_async_config_info(MPI_Info info, CSP_async_config * async_config, int *set_flag)
 {
     int mpi_errno = MPI_SUCCESS;
     int tmp_set_flag = 0;

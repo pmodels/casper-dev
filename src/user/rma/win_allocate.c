@@ -52,7 +52,7 @@ static int read_win_info(MPI_Info info, CSP_win * ug_win)
         char info_value[MPI_MAX_INFO_VAL + 1];
 
         /* Check if user wants to update async config */
-        mpi_errno = CSP_win_get_asyc_config_info(info, &ug_win->info_args.async_config, NULL);
+        mpi_errno = CSP_win_get_async_config_info(info, &ug_win->info_args.async_config, NULL);
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
 

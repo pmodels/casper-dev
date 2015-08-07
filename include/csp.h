@@ -965,8 +965,8 @@ extern int CSP_recv_pscw_complete_msg(int post_grp_size, CSP_win * ug_win, int b
 extern int CSP_win_release(CSP_win * ug_win);
 
 extern int CSP_win_print_async_config(CSP_win * ug_win);
-extern int CSP_win_get_asyc_config_info(MPI_Info info, CSP_async_config * async_config,
-                                        int *set_flag);
+extern int CSP_win_get_async_config_info(MPI_Info info, CSP_async_config * async_config,
+                                         int *set_flag);
 extern int CSP_win_sched_async_config(CSP_win * ug_win);
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
