@@ -33,6 +33,8 @@ static unsigned long win_id = 0;
 /* for debug use-only */
 char CSP_epoch_types_name[128];
 char CSP_async_level_name[128];
+char CSP_async_config_name[16];
+char CSP_target_async_stat_name[16];
 
 static int read_win_info(MPI_Info info, CSP_win * ug_win)
 {

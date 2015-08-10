@@ -735,41 +735,43 @@ static inline const char *CSP_target_get_epoch_stat_name(CSP_win_target * target
 }
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+extern char CSP_target_async_stat_name[16];
 static inline const char *CSP_get_target_async_stat_name(CSP_target_async_stat async_stat)
 {
-    const char *name = "";
+    memset(CSP_target_async_stat_name, 0, sizeof(CSP_target_async_stat_name));
     switch (async_stat) {
     case CSP_TARGET_ASYNC_ON:
-        name = "on";
+        sprintf(CSP_target_async_stat_name, "on");
         break;
     case CSP_TARGET_ASYNC_OFF:
-        name = "off";
+        sprintf(CSP_target_async_stat_name, "off");
         break;
     case CSP_TARGET_ASYNC_NONE:
-        name = "none";
+        sprintf(CSP_target_async_stat_name, "none");
         break;
     }
-    return name;
+    return CSP_target_async_stat_name;
 }
 #endif
 
+extern char CSP_async_config_name[16];
 static inline const char *CSP_get_async_config_name(CSP_async_config async_config)
 {
-    const char *name = "";
+    memset(CSP_async_config_name, 0, sizeof(CSP_async_config_name));
     switch (async_config) {
     case CSP_ASYNC_CONFIG_ON:
-        name = "on";
+        sprintf(CSP_async_config_name, "on");
         break;
     case CSP_ASYNC_CONFIG_OFF:
-        name = "off";
+        sprintf(CSP_async_config_name, "off");
         break;
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
     case CSP_ASYNC_CONFIG_AUTO:
-        name = "auto";
+        sprintf(CSP_async_config_name, "auto");
         break;
 #endif
     }
-    return name;
+    return CSP_async_config_name;
 }
 
 extern char CSP_async_level_name[128];
