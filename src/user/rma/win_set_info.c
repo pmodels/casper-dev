@@ -40,23 +40,38 @@ int MPI_Win_set_info(MPI_Win win, MPI_Info info)
     }
 
     if (CSP_ENV.async_sched_level >= CSP_ASYNC_SCHED_PER_COLL) {
-        CSP_async_config async_config;
-        int async_config_phases = 0;
-        int set_flag = 0;
+        CSP_async_config async_config = ug_win->info_args.async_config;
+        int async_config_phases = 0;    /* do nothing by default */
+        int set_config_flag = 0, set_phases_flag = 0;
         int user_rank = 0;
 
         PMPI_Comm_rank(ug_win->user_comm, &user_rank);
 
         mpi_errno = CSP_win_get_async_config_info(info, &async_config,
-                                                  &async_config_phases, &set_flag);
+                                                  &set_config_flag, &async_config_phases,
+                                                  &set_phases_flag);
         if (mpi_errno != MPI_SUCCESS)
             return mpi_errno;
 
+        /* update window setting.
+         * It is safe to change window setting without symmetric, since
+         * both operation and synchronization calls only check per-target status. */
+        if (set_config_flag)
+            ug_win->info_args.async_config = async_config;
+        if (set_phases_flag)
+            ug_win->info_args.async_config_phases = async_config_phases;
+
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-        /* Locally reschedule my status according to runtime monitored data. */
+        /* If set async_config, but does not set phases, do all only for this time. */
+        if (set_config_flag && !set_phases_flag)
+            async_config_phases = CSP_ASYNC_CONFIG_PHASE_LOCAL_UPDATE |
+                CSP_ASYNC_CONFIG_PHASE_REMOTE_EXCHANGE;
+
+        /* Locally reschedule my status if user only specifies local-update phase. */
         /* FIXME: this local update is not related to any window, should not be
          * triggered in win_set_info. */
-        if (async_config_phases & CSP_ASYNC_CONFIG_PHASE_LOCAL_UPDATE) {
+        if ((async_config_phases == CSP_ASYNC_CONFIG_PHASE_LOCAL_UPDATE) &&
+            ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
             CSP_ra_sched_async_stat();
 
             if (CSP_ENV.verbose >= 2 && user_rank == 0)
@@ -70,12 +85,8 @@ int MPI_Win_set_info(MPI_Win win, MPI_Info info)
 
         /* This is a symmetric call on all processes with the same info value.
          * It is safe to update asynchronous configuration for this window. */
-        if (symmetric_flag) {
-            /* update window setting */
-            if (set_flag)
-                ug_win->info_args.async_config = async_config;
-            ug_win->info_args.async_config_phases = async_config_phases;
-
+        if (symmetric_flag && (ug_win->info_args.async_config_phases &
+                               CSP_ASYNC_CONFIG_PHASE_REMOTE_EXCHANGE)) {
             /* update asynchronous configures */
             mpi_errno = CSP_win_sched_async_config(ug_win);
             if (mpi_errno != MPI_SUCCESS)

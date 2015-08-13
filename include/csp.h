@@ -974,7 +974,8 @@ extern int CSP_win_release(CSP_win * ug_win);
 
 extern int CSP_win_print_async_config(CSP_win * ug_win);
 extern int CSP_win_get_async_config_info(MPI_Info info, CSP_async_config * async_config,
-                                         int *async_config_phases, int *set_flag);
+                                         int *set_config_flag, int *async_config_phases,
+                                         int *set_phases_flag);
 extern int CSP_win_sched_async_config(CSP_win * ug_win);
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED

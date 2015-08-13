@@ -44,6 +44,8 @@ static int read_win_info(MPI_Info info, CSP_win * ug_win)
     ug_win->info_args.epoch_type = CSP_EPOCH_LOCK_ALL | CSP_EPOCH_LOCK |
         CSP_EPOCH_PSCW | CSP_EPOCH_FENCE;
     ug_win->info_args.async_config = CSP_ENV.async_config;      /* default */
+    ug_win->info_args.async_config_phases = CSP_ASYNC_CONFIG_PHASE_LOCAL_UPDATE |
+        CSP_ASYNC_CONFIG_PHASE_REMOTE_EXCHANGE;
 
     /* default window name */
     sprintf(ug_win->info_args.win_name, "win-%d-%lu", CSP_MY_RANK_IN_WORLD, win_id);
@@ -54,7 +56,7 @@ static int read_win_info(MPI_Info info, CSP_win * ug_win)
         char info_value[MPI_MAX_INFO_VAL + 1];
 
         /* Check if user wants to update async config */
-        mpi_errno = CSP_win_get_async_config_info(info, &ug_win->info_args.async_config,
+        mpi_errno = CSP_win_get_async_config_info(info, &ug_win->info_args.async_config, NULL,
                                                   &ug_win->info_args.async_config_phases, NULL);
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
@@ -679,15 +681,11 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     /* If runtime scheduling is enabled for this window, we exchange the
      * asynchronous configure with every target, since its value might be different. */
     if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
-
-        /* Win_allocate can skip local rescheduling, but should always remote exchange
-         * because we need initial status for each target. */
         if (ug_win->info_args.async_config_phases & CSP_ASYNC_CONFIG_PHASE_LOCAL_UPDATE)
             CSP_ra_sched_async_stat();
 
-        ug_win->info_args.async_config_phases |= CSP_ASYNC_CONFIG_PHASE_REMOTE_EXCHANGE;
-
-        /* read my current status. */
+        /* Win_allocate can skip local rescheduling, but should always remote exchange
+         * because we need initial status for each target. */
         my_async_stat = CSP_ra_get_async_stat();
         tmp_gather_cnt++;
     }

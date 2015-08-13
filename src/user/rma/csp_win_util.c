@@ -65,10 +65,11 @@ void CSP_win_dump_async_config(MPI_Win win, const char *fname)
  * This call is also in by win_allocate.
  */
 int CSP_win_get_async_config_info(MPI_Info info, CSP_async_config * async_config,
-                                  int *async_config_phases, int *set_flag)
+                                  int *set_config_flag, int *async_config_phases,
+                                  int *set_phases_flag)
 {
     int mpi_errno = MPI_SUCCESS;
-    int tmp_set_flag = 0;
+    int tmp_set_config_flag = 0, tmp_set_phases_flag = 0;
 
     if (info != MPI_INFO_NULL) {
         int info_flag = 0;
@@ -82,46 +83,43 @@ int CSP_win_get_async_config_info(MPI_Info info, CSP_async_config * async_config
         if (info_flag == 1) {
             if (!strncmp(info_value, "off", strlen("off"))) {
                 (*async_config) = CSP_ASYNC_CONFIG_OFF;
-                tmp_set_flag = 1;
+                tmp_set_config_flag = 1;
             }
             else if (!strncmp(info_value, "on", strlen("on"))) {
                 (*async_config) = CSP_ASYNC_CONFIG_ON;
-                tmp_set_flag = 1;
+                tmp_set_config_flag = 1;
             }
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
             else if (!strncmp(info_value, "auto", strlen("auto"))) {
                 (*async_config) = CSP_ASYNC_CONFIG_AUTO;
-                tmp_set_flag = 1;
+                tmp_set_config_flag = 1;
             }
 #endif
         }
-
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-        if (async_config_phases != NULL) {
-            (*async_config_phases) = CSP_ASYNC_CONFIG_PHASE_LOCAL_UPDATE |
-                CSP_ASYNC_CONFIG_PHASE_REMOTE_EXCHANGE;
+        memset(info_value, 0, sizeof(info_value));
+        mpi_errno = PMPI_Info_get(info, "async_config_phases",
+                                  MPI_MAX_INFO_VAL, info_value, &info_flag);
+        if (mpi_errno != MPI_SUCCESS)
+            return mpi_errno;
 
-            memset(info_value, 0, sizeof(info_value));
-            mpi_errno = PMPI_Info_get(info, "async_config_phases",
-                                      MPI_MAX_INFO_VAL, info_value, &info_flag);
-            if (mpi_errno != MPI_SUCCESS)
-                return mpi_errno;
-
-            if (info_flag == 1) {
-                if (!strncmp(info_value, "local-update", strlen("local-update"))) {
-                    (*async_config_phases) = CSP_ASYNC_CONFIG_PHASE_LOCAL_UPDATE;
-                }
-                else if (!strncmp(info_value, "remote-exchange", strlen("remote-exchange"))) {
-                    (*async_config_phases) = CSP_ASYNC_CONFIG_PHASE_REMOTE_EXCHANGE;
-                }
+        if (info_flag == 1) {
+            if (!strncmp(info_value, "local-update", strlen("local-update"))) {
+                (*async_config_phases) = CSP_ASYNC_CONFIG_PHASE_LOCAL_UPDATE;
+                tmp_set_phases_flag = 1;
+            }
+            else if (!strncmp(info_value, "remote-exchange", strlen("remote-exchange"))) {
+                (*async_config_phases) = CSP_ASYNC_CONFIG_PHASE_REMOTE_EXCHANGE;
+                tmp_set_phases_flag = 1;
             }
         }
 #endif
     }
 
-    if (set_flag != NULL) {
-        (*set_flag) = tmp_set_flag;
-    }
+    if (set_config_flag != NULL)
+        (*set_config_flag) = tmp_set_config_flag;
+    if (set_phases_flag != NULL)
+        (*set_phases_flag) = tmp_set_phases_flag;
 
     return mpi_errno;
 }
