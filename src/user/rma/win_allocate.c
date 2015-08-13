@@ -759,7 +759,8 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     /* If all targets turn off asynchronous redirection in per-window scheduling level,
      * simply return normal window. But again, for higher levels, we need always initialize
      * the internal structures. */
-    if (CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_PER_WIN && all_targets_async_off)
+    if (CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_PER_WIN &&
+        ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO && all_targets_async_off)
         goto fn_noasync;
 #endif
 
