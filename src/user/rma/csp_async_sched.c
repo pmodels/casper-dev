@@ -42,8 +42,8 @@ void CSP_ra_sched_async_stat()
 {
     double interval;
     int freq = 0;
-
     CSP_target_async_stat old_stat CSP_ATTRIBUTE((unused)) = CSP_MY_ASYNC_STAT;
+    char old_stat_name[16] CSP_ATTRIBUTE((unused));
 
     /* schedule async config by using dynamic frequency */
     interval = PMPI_Wtime() - CSP_RM[CSP_RM_COMM_FREQ].interval_sta;
@@ -56,9 +56,11 @@ void CSP_ra_sched_async_stat()
         CSP_MY_ASYNC_STAT = CSP_TARGET_ASYNC_ON;
     }
 
+#ifdef CSP_DEBUG
+    strncpy(old_stat_name, CSP_get_target_async_stat_name(old_stat), 16);
+#endif
     CSP_DBG_PRINT(" my async stat: freq=%d(%.4f/%.4f), %s->%s\n ",
-                  freq, CSP_RM[CSP_RM_COMM_FREQ].time, interval,
-                  CSP_get_target_async_stat_name(old_stat),
+                  freq, CSP_RM[CSP_RM_COMM_FREQ].time, interval, old_stat_name,
                   CSP_get_target_async_stat_name(CSP_MY_ASYNC_STAT));
 
     CSP_RM[CSP_RM_COMM_FREQ].last_time = CSP_RM[CSP_RM_COMM_FREQ].time;

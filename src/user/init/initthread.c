@@ -189,24 +189,16 @@ static int CSP_initialize_env()
 
     val = getenv("CSP_RUNTIME_ASYNC_SCHED_THR_H");
     if (val && strlen(val)) {
-        CSP_ENV.async_sched_thr_h = atoll(val);
-        if (CSP_ENV.async_sched_thr_h <= 0) {
-            CSP_ERR_PRINT("Wrong CSP_RUNTIME_ASYNC_SCHED_THR_H %llu\n", CSP_ENV.async_sched_thr_h);
-            return -1;
-        }
+        CSP_ENV.async_sched_thr_h = atoi(val);
     }
     val = getenv("CSP_RUNTIME_ASYNC_SCHED_THR_L");
     if (val && strlen(val)) {
-        CSP_ENV.async_sched_thr_l = atoll(val);
-        if (CSP_ENV.async_sched_thr_h <= 0) {
-            CSP_ERR_PRINT("Wrong CSP_RUNTIME_ASYNC_SCHED_THR_L %llu\n", CSP_ENV.async_sched_thr_l);
-            return -1;
-        }
+        CSP_ENV.async_sched_thr_l = atoi(val);
     }
 
     if (CSP_ENV.async_sched_thr_l > CSP_ENV.async_sched_thr_h) {
-        CSP_ERR_PRINT("Wrong CSP_RUNTIME_ASYNC_SCHED_THR_H %llu or "
-                      "CSP_RUNTIME_ASYNC_SCHED_THR_L %llu\n",
+        CSP_ERR_PRINT("Wrong CSP_RUNTIME_ASYNC_SCHED_THR_H %d or "
+                      "CSP_RUNTIME_ASYNC_SCHED_THR_L %d\n",
                       CSP_ENV.async_sched_thr_h, CSP_ENV.async_sched_thr_l);
         return -1;
     }
@@ -255,8 +247,8 @@ static int CSP_initialize_env()
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
         CSP_INFO_PRINT(1, "Runtime Scheduling Options for Asynchronous Configuration:  \n"
-                       "    CSP_RUNTIME_ASYNC_SCHED_THR_L = %llu \n"
-                       "    CSP_RUNTIME_ASYNC_SCHED_THR_H = %llu \n",
+                       "    CSP_RUNTIME_ASYNC_SCHED_THR_L = %d \n"
+                       "    CSP_RUNTIME_ASYNC_SCHED_THR_H = %d \n",
                        CSP_ENV.async_sched_thr_l, CSP_ENV.async_sched_thr_h);
 #endif
         CSP_INFO_PRINT(1, "\n");

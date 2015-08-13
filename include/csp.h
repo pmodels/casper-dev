@@ -225,8 +225,8 @@ typedef struct CSP_env_param {
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
     /* runtime scheduling options for asynchronous progress configuration */
-    unsigned long long async_sched_thr_l;       /* low threshold */
-    unsigned long long async_sched_thr_h;       /* high threshold */
+    int async_sched_thr_l;      /* low threshold */
+    int async_sched_thr_h;      /* high threshold */
 #endif
 } CSP_env_param;
 
