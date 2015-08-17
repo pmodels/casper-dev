@@ -982,8 +982,8 @@ extern int CSP_win_sched_async_config(CSP_win * ug_win);
 #define CSP_RUNTIME_ASYNC_SCHED_THR_DEFAULT_FREQ (50)
 
 extern void CSP_ra_update_async_stat(CSP_async_config async_config);
-extern void CSP_ra_sched_async_stat();
-extern CSP_target_async_stat CSP_ra_get_async_stat();
+extern void CSP_ra_sched_async_stat(void);
+extern CSP_target_async_stat CSP_ra_get_async_stat(void);
 
 
 #else
