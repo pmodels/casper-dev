@@ -88,7 +88,7 @@ int MPI_Win_set_info(MPI_Win win, MPI_Info info)
         if (symmetric_flag && (ug_win->info_args.async_config_phases &
                                CSP_ASYNC_CONFIG_PHASE_REMOTE_EXCHANGE)) {
             /* update asynchronous configures */
-            mpi_errno = CSP_win_sched_async_config(ug_win);
+            mpi_errno = CSP_win_coll_sched_async_config(ug_win);
             if (mpi_errno != MPI_SUCCESS)
                 goto fn_fail;
         }

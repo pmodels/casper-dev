@@ -196,7 +196,22 @@ int CSP_win_print_async_config(CSP_win * ug_win)
     goto fn_exit;
 }
 
-int CSP_win_sched_async_config(CSP_win * ug_win)
+/* Schedule asynchronous configuration in collective manner.
+ * This routine is safe to be used in window collective calls, such as win_fence
+ * and win_set_info with symmetric hint (user has to guarantee collective and remote
+ * completion of all issued operations before win_set_info started).
+ *
+ * Note that win_allocate is also a collective call, but it uses a separate routine
+ * since it is not fully controlled by the async_config_phases hint (remote-exchange
+ * phase can not be skipped) and we want to merge it into the original allgather
+ * operation to hide latency.
+ *
+ * This routine contains following steps:
+ * - Every process updates its local asynchronous status if "local-update" phase is enabled;
+ * - Every process collectively exchanges with other processes if "remote-exchange"
+ *   phase is enabled.
+ */
+int CSP_win_coll_sched_async_config(CSP_win * ug_win)
 {
     int mpi_errno = MPI_SUCCESS;
     MPI_Aint *tmp_gather_buf = NULL;

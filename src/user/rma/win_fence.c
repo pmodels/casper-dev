@@ -109,7 +109,7 @@ int MPI_Win_fence(int assert, MPI_Win win)
     /* For local-update only phase, should already be executed in win_set_info. */
     if (CSP_ENV.async_sched_level >= CSP_ASYNC_SCHED_PER_COLL &&
         (ug_win->info_args.async_config_phases & CSP_ASYNC_CONFIG_PHASE_REMOTE_EXCHANGE)) {
-        mpi_errno = CSP_win_sched_async_config(ug_win);
+        mpi_errno = CSP_win_coll_sched_async_config(ug_win);
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
     }
