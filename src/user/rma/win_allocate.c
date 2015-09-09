@@ -696,7 +696,7 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
         my_async_stat = (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_ON) ?
             CSP_TARGET_ASYNC_ON : CSP_TARGET_ASYNC_OFF;
         for (i = 0; i < user_nprocs; i++)
-            ug_win->targets[i].async_stat = my_async_stat;
+            ug_win->targets[i].synced_async_stat = my_async_stat;
     }
 
     /* Gather users' disp_unit, size, ranks and node_id */
@@ -728,9 +728,9 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
         ug_win->targets[i].local_user_nprocs = (int) tmp_gather_buf[tmp_gather_cnt * i + 6];
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
         if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
-            ug_win->targets[i].async_stat =
+            ug_win->targets[i].synced_async_stat =
                 (CSP_target_async_stat) tmp_gather_buf[tmp_gather_cnt * i + 7];
-            all_targets_async_off &= (ug_win->targets[i].async_stat == CSP_TARGET_ASYNC_OFF);
+            all_targets_async_off &= (ug_win->targets[i].synced_async_stat == CSP_TARGET_ASYNC_OFF);
         }
 #endif
 

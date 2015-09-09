@@ -87,7 +87,7 @@ int MPI_Win_lock(int lock_type, int target_rank, int assert, MPI_Win win)
     else
 #endif /*end of CSP_ENABLE_SYNC_ALL_OPT */
     {
-        if (target->async_stat == CSP_TARGET_ASYNC_ON) {
+        if (target->synced_async_stat == CSP_TARGET_ASYNC_ON) {
             /* lock all ghosts. */
             mpi_errno = CSP_win_target_lock_ghosts(lock_type, assert, target_rank, ug_win);
             if (mpi_errno != MPI_SUCCESS)

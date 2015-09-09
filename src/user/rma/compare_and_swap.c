@@ -96,7 +96,7 @@ static int CSP_compare_and_swap_impl(const void *origin_addr, const void *compar
     CSP_target_get_epoch_win(0, target, ug_win, win_ptr);
 
     /* If the target is async-off, directly send to the target via internal window. */
-    if (target->async_stat == CSP_TARGET_ASYNC_OFF) {
+    if (target->synced_async_stat == CSP_TARGET_ASYNC_OFF) {
         mpi_errno = PMPI_Compare_and_swap(origin_addr, compare_addr, result_addr,
                                           datatype, target->ug_rank, target_disp, *win_ptr);
 

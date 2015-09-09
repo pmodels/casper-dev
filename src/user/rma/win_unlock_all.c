@@ -61,7 +61,7 @@ static int CSP_win_mixed_unlock_all_impl(CSP_win * ug_win)
     if (CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_PER_WIN) {
         /* Unlock either user process or ghost in per-window scheduling. */
         for (i = 0; i < user_nprocs; i++) {
-            if (ug_win->targets[i].async_stat == CSP_TARGET_ASYNC_ON) {
+            if (ug_win->targets[i].synced_async_stat == CSP_TARGET_ASYNC_ON) {
                 mpi_errno = CSP_win_target_unlock_ghosts(i, ug_win);
                 if (mpi_errno != MPI_SUCCESS)
                     goto fn_fail;

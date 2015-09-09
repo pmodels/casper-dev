@@ -110,7 +110,7 @@ int CSP_win_flush_all(CSP_win * ug_win)
 #else
 
     for (i = 0; i < user_nprocs; i++) {
-        if (ug_win->targets[i].async_stat == CSP_TARGET_ASYNC_ON) {
+        if (ug_win->targets[i].synced_async_stat == CSP_TARGET_ASYNC_ON) {
             /* only flush ghosts if async is on */
             mpi_errno = CSP_win_target_flush_ghosts(i, ug_win);
             if (mpi_errno != MPI_SUCCESS)

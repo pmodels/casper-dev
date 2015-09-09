@@ -43,7 +43,7 @@ void CSP_win_dump_async_config(MPI_Win win, const char *fname)
                 int async_off_cnt = 0;
                 PMPI_Comm_size(ug_win->user_comm, &user_nprocs);
                 for (i = 0; i < user_nprocs; i++) {
-                    if (ug_win->targets[i].async_stat == CSP_TARGET_ASYNC_ON) {
+                    if (ug_win->targets[i].synced_async_stat == CSP_TARGET_ASYNC_ON) {
                         async_on_cnt++;
                     }
                     else {
@@ -141,7 +141,7 @@ int CSP_win_print_async_config(CSP_win * ug_win)
         if (user_rank == 0) {
             int async_on_cnt = 0, async_off_cnt = 0;
             for (i = 0; i < user_nprocs; i++) {
-                if (ug_win->targets[i].async_stat == CSP_TARGET_ASYNC_ON) {
+                if (ug_win->targets[i].synced_async_stat == CSP_TARGET_ASYNC_ON) {
                     async_on_cnt++;
                 }
                 else {
@@ -247,7 +247,7 @@ int CSP_win_coll_sched_async_config(CSP_win * ug_win)
                 goto fn_fail;
 
             for (i = 0; i < user_nprocs; i++)
-                ug_win->targets[i].async_stat = (CSP_target_async_stat) tmp_gather_buf[i];
+                ug_win->targets[i].synced_async_stat = (CSP_target_async_stat) tmp_gather_buf[i];
         }
     }
     else
@@ -257,7 +257,7 @@ int CSP_win_coll_sched_async_config(CSP_win * ug_win)
         my_async_stat = (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_ON) ?
             CSP_TARGET_ASYNC_ON : CSP_TARGET_ASYNC_OFF;
         for (i = 0; i < user_nprocs; i++)
-            ug_win->targets[i].async_stat = my_async_stat;
+            ug_win->targets[i].synced_async_stat = my_async_stat;
     }
 
     if (CSP_ENV.verbose >= 2 && user_rank == 0) {
