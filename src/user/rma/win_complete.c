@@ -87,14 +87,19 @@ static int CSP_complete_flush(int start_grp_size CSP_ATTRIBUTE((unused)), CSP_wi
         target_rank = ug_win->start_ranks_in_win_group[i];
         target = &(ug_win->targets[target_rank]);
 
-        if (target->synced_async_stat == CSP_ASYNC_ON) {
-            /* only flush ghosts if async is on */
+        /* we flush only the ghost or the target according to synced_async_stat
+         * since such status can only be changed after remote completion of all issued
+         * operations; however, we need to flush both if PUT/GET uses
+         * async_stat that is exchanged asynchronously. */
+        if (target->synced_async_stat == CSP_ASYNC_ON ||
+            CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_ANYTIME) {
             mpi_errno = CSP_win_target_flush_ghosts(target_rank, ug_win);
             if (mpi_errno != MPI_SUCCESS)
                 goto fn_fail;
         }
-        else {
-            /* only flush target if async is off. */
+
+        if (target->synced_async_stat == CSP_ASYNC_OFF ||
+            CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_ANYTIME) {
             mpi_errno = CSP_win_target_flush_user(target_rank, ug_win, &is_self_flushed);
             if (mpi_errno != MPI_SUCCESS)
                 goto fn_fail;

@@ -22,6 +22,10 @@ int MPI_Finalize(void)
         CSP_func_start(CSP_FUNC_FINALIZE, 0, 0);
     }
 
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+    CSP_ra_finalize();
+#endif
+
     if (CSP_COMM_USER_WORLD != MPI_COMM_NULL) {
         CSP_DBG_PRINT(" free CSP_COMM_USER_WORLD\n");
         PMPI_Comm_free(&CSP_COMM_USER_WORLD);

@@ -695,8 +695,10 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
         /* Locally set for all targets since the value is globally consistent. */
         my_async_stat = (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_ON) ?
             CSP_ASYNC_ON : CSP_ASYNC_OFF;
-        for (i = 0; i < user_nprocs; i++)
+        for (i = 0; i < user_nprocs; i++) {
             ug_win->targets[i].synced_async_stat = my_async_stat;
+            ug_win->targets[i].async_stat = my_async_stat;
+        }
     }
 
     /* Gather users' disp_unit, size, ranks and node_id */
@@ -730,6 +732,7 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
         if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
             ug_win->targets[i].synced_async_stat =
                 (CSP_async_stat) tmp_gather_buf[tmp_gather_cnt * i + 7];
+            ug_win->targets[i].async_stat = (CSP_async_stat) tmp_gather_buf[tmp_gather_cnt * i + 7];
             all_targets_async_off &= (ug_win->targets[i].synced_async_stat == CSP_ASYNC_OFF);
         }
 #endif
@@ -760,6 +763,10 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     if (CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_PER_WIN &&
         ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO && all_targets_async_off)
         goto fn_noasync;
+
+    if (CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_ANYTIME &&
+        ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO)
+        CSP_win_sched_async_config_reset(ug_win);
 #endif
 
     if (user_rank == 0) {

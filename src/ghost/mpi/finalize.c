@@ -12,6 +12,10 @@ int CSPG_finalize(void)
 {
     int mpi_errno = MPI_SUCCESS;
 
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+    CSPG_ra_finalize();
+#endif
+
     if (CSP_COMM_LOCAL != MPI_COMM_NULL) {
         CSPG_DBG_PRINT(" free CSP_COMM_LOCAL\n");
         PMPI_Comm_free(&CSP_COMM_LOCAL);

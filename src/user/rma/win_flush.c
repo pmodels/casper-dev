@@ -80,15 +80,17 @@ int MPI_Win_flush(int target_rank, MPI_Win win)
     else
 #endif /*end of CSP_ENABLE_SYNC_ALL_OPT */
     {
-        if (target->synced_async_stat == CSP_ASYNC_ON) {
-            /* only flush ghosts if async is on */
+        if (target->synced_async_stat == CSP_ASYNC_ON ||
+            CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_ANYTIME) {
+            /* flush ghosts if async is on */
             mpi_errno = CSP_win_target_flush_ghosts(target_rank, ug_win);
             if (mpi_errno != MPI_SUCCESS)
                 goto fn_fail;
         }
-        else {
-            /* only flush target if async is off.
-             * All issued operations to ghost process must be already completed before off. */
+
+        if (target->synced_async_stat == CSP_ASYNC_OFF ||
+            CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_ANYTIME) {
+            /* flush target if async is off */
             mpi_errno = CSP_win_target_flush_user(target_rank, ug_win, &is_self_flushed);
             if (mpi_errno != MPI_SUCCESS)
                 goto fn_fail;

@@ -25,10 +25,25 @@ int CSPG_func_start(CSP_func * FUNC, int *user_local_root, int *user_nprocs, int
      * Otherwise deadlock may happen if multiple user roots send request to
      * ghosts concurrently and some ghosts are locked in different communicator creation. */
     if (local_gp_rank == 0) {
-        mpi_errno = PMPI_Recv((char *) &g_info, sizeof(CSP_func_info), MPI_CHAR,
-                              MPI_ANY_SOURCE, CSP_FUNC_TAG, CSP_COMM_LOCAL, &status);
+        MPI_Request recv_req = MPI_REQUEST_NULL;
+        int flag = 0;
+
+        mpi_errno = PMPI_Irecv((char *) &g_info, sizeof(CSP_func_info), MPI_CHAR,
+                               MPI_ANY_SOURCE, CSP_FUNC_TAG, CSP_COMM_LOCAL, &recv_req);
         if (mpi_errno != MPI_SUCCESS)
             return mpi_errno;
+
+        /* blocking wait for receive */
+        while (recv_req != MPI_REQUEST_NULL) {
+            mpi_errno = PMPI_Test(&recv_req, &flag, &status);
+            if (mpi_errno != MPI_SUCCESS)
+                return mpi_errno;
+
+            /* progress on global asynchronous status synchronization. */
+            mpi_errno = CSPG_ra_gsync();
+            if (mpi_errno != MPI_SUCCESS)
+                return mpi_errno;
+        }
 
         CSPG_DBG_PRINT(" received Func start request from local rank %d\n", status.MPI_SOURCE);
 

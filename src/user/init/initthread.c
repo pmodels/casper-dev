@@ -186,6 +186,7 @@ static int CSP_initialize_env()
     /* Runtime scheduling of asynchronous progress configuration */
     CSP_ENV.async_sched_thr_l = CSP_RUNTIME_ASYNC_SCHED_THR_DEFAULT_FREQ;
     CSP_ENV.async_sched_thr_h = CSP_RUNTIME_ASYNC_SCHED_THR_DEFAULT_FREQ;
+    CSP_ENV.async_timed_gsync_int = CSP_RUNTIME_ASYNC_TIMED_GSYNC_DEFAULT_INT;
 
     val = getenv("CSP_RUNTIME_ASYNC_SCHED_THR_H");
     if (val && strlen(val)) {
@@ -200,6 +201,16 @@ static int CSP_initialize_env()
         CSP_ERR_PRINT("Wrong CSP_RUNTIME_ASYNC_SCHED_THR_H %d or "
                       "CSP_RUNTIME_ASYNC_SCHED_THR_L %d\n",
                       CSP_ENV.async_sched_thr_h, CSP_ENV.async_sched_thr_l);
+        return -1;
+    }
+
+    val = getenv("CSP_RUNTIME_ASYNC_TIMED_GSYNC_INT");
+    if (val && strlen(val)) {
+        CSP_ENV.async_timed_gsync_int = atoll(val);
+    }
+    if (CSP_ENV.async_timed_gsync_int < 0) {
+        CSP_ERR_PRINT("Wrong CSP_RUNTIME_ASYNC_TIMED_GSYNC_INT %lld\n",
+                      CSP_ENV.async_timed_gsync_int);
         return -1;
     }
 #endif
@@ -249,7 +260,9 @@ static int CSP_initialize_env()
         CSP_INFO_PRINT(1, "Runtime Scheduling Options for Asynchronous Configuration:  \n"
                        "    CSP_RUNTIME_ASYNC_SCHED_THR_L = %d \n"
                        "    CSP_RUNTIME_ASYNC_SCHED_THR_H = %d \n",
-                       CSP_ENV.async_sched_thr_l, CSP_ENV.async_sched_thr_h);
+                       "    CSP_RUNTIME_ASYNC_TIMED_GSYNC_INT = %lld(s) \n",
+                       CSP_ENV.async_sched_thr_l, CSP_ENV.async_sched_thr_h,
+                       CSP_ENV.async_timed_gsync_int);
 #endif
         CSP_INFO_PRINT(1, "\n");
         fflush(stdout);
@@ -455,6 +468,12 @@ int MPI_Init_thread(int *argc, char ***argv, int required, int *provided)
                       local_nprocs, user_rank, user_nprocs, local_user_rank,
                       local_user_nprocs, CSP_MY_NODE_ID);
 
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+        mpi_errno = CSP_ra_init();
+        if (mpi_errno != MPI_SUCCESS)
+            goto fn_fail;
+#endif
+
         CSP_init_win_cache();
         CSP_init_win_name_cache();
         CSP_rm_reset_all();
@@ -469,6 +488,12 @@ int MPI_Init_thread(int *argc, char ***argv, int required, int *provided)
             free(ranks_in_user_world);
         if (ranks_in_world)
             free(ranks_in_world);
+
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+        mpi_errno = CSPG_ra_init();
+        if (mpi_errno != MPI_SUCCESS)
+            goto fn_fail;
+#endif
 
         CSP_DBG_PRINT("I am ghost, %d/%d in world, %d/%d in local, node_id %d\n", rank,
                       nprocs, local_rank, local_nprocs, CSP_MY_NODE_ID);
@@ -488,6 +513,10 @@ int MPI_Init_thread(int *argc, char ***argv, int required, int *provided)
 
   fn_fail:
     /* --BEGIN ERROR HANDLING-- */
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+    CSP_ra_finalize();
+#endif
+
     if (CSP_COMM_USER_WORLD != MPI_COMM_NULL) {
         CSP_DBG_PRINT("free CSP_COMM_USER_WORLD\n");
         PMPI_Comm_free(&CSP_COMM_USER_WORLD);

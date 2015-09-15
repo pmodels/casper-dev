@@ -65,6 +65,17 @@ typedef struct CSPG_func_info {
     int user_root_in_local;
 } CSPG_func_info;
 
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+typedef struct {
+    int user_rank;
+    CSP_async_stat async_stat;
+} CSPG_ra_gsync_pkt;
+
+extern int CSPG_ra_init(void);
+extern void CSPG_ra_finalize(void);
+extern int CSPG_ra_gsync(void);
+#endif
+
 extern int CSPG_win_allocate(int user_local_root, int user_nprocs);
 extern int CSPG_win_free(int user_local_root);
 

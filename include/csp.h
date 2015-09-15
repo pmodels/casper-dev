@@ -152,7 +152,11 @@ extern FILE *CSP_appending_fp;
         }} while (0)
 
 /* ====================================================================== */
-
+typedef struct {
+    void *base;
+    MPI_Aint size;
+    MPI_Win win;
+} CSP_local_shm_region;
 
 typedef enum {
     CSP_LOAD_OPT_STATIC,
@@ -227,6 +231,8 @@ typedef struct CSP_env_param {
     /* runtime scheduling options for asynchronous progress configuration */
     int async_sched_thr_l;      /* low threshold */
     int async_sched_thr_h;      /* high threshold */
+    long long async_timed_gsync_int;    /* the interval between two timed
+                                         * local scheduling (in seconds) */
 #endif
 } CSP_env_param;
 
@@ -340,6 +346,7 @@ typedef struct CSP_win_target {
 
     CSP_target_epoch_stat epoch_stat;   /* indicate which access epoch is opened for the target. */
     CSP_async_stat synced_async_stat;   /* per-target synchronized async status. Safe for ACC-like operations. */
+    CSP_async_stat async_stat;  /* per-target async status. Should only use for PUT/GET operations. */
 } CSP_win_target;
 
 typedef struct CSP_win {
@@ -547,6 +554,7 @@ extern int CSP_NUM_NODES;
 extern int CSP_MY_NODE_ID;
 extern int *CSP_ALL_NODE_IDS;
 extern int CSP_MY_RANK_IN_WORLD;
+extern CSP_local_shm_region CSP_LOCAL_ASYNC_STATS_REG;
 
 extern CSP_env_param CSP_ENV;
 
@@ -972,6 +980,9 @@ extern int CSP_recv_pscw_complete_msg(int post_grp_size, CSP_win * ug_win, int b
 
 extern int CSP_win_release(CSP_win * ug_win);
 
+/* -----------------------------------------------
+ * Window-related asynchronous scheduling routines
+ * ----------------------------------------------- */
 extern int CSP_win_print_async_config(CSP_win * ug_win);
 extern int CSP_win_get_async_config_info(MPI_Info info, CSP_async_config * async_config,
                                          int *set_config_flag, int *async_config_phases,
@@ -979,12 +990,67 @@ extern int CSP_win_get_async_config_info(MPI_Info info, CSP_async_config * async
 extern int CSP_win_coll_sched_async_config(CSP_win * ug_win);
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+
+/* ------------------------------------------
+ * Local asynchronous scheduling routines
+ * ------------------------------------------ */
 #define CSP_RUNTIME_ASYNC_SCHED_THR_DEFAULT_FREQ (50)
 
 extern void CSP_ra_update_async_stat(CSP_async_config async_config);
+extern CSP_async_stat CSP_ra_sched_async_stat_impl(void);
 extern void CSP_ra_sched_async_stat(void);
 extern CSP_async_stat CSP_ra_get_async_stat(void);
 
+/* --------------------------------------------
+ * Global asynchronous synchronization routines
+ * -------------------------------------------- */
+#define CSP_RUNTIME_ASYNC_TIMED_GSYNC_DEFAULT_INT (180) /* in seconds, 3 mins */
+extern double ra_gsync_interavl_sta = 0.0;
+extern CSP_async_stat *ra_gsync_local_cache;
+
+extern int CSP_ra_init(void);
+extern void CSP_ra_finalize(void);
+extern int CSP_ra_gsync_update(CSP_async_stat my_stat);
+extern int CSP_ra_gsync_refresh(void);
+
+static inline int CSP_ra_gsync_get_stat(int user_rank)
+{
+    return ra_gsync_local_cache[user_rank];
+}
+
+static inline int CSP_ra_timed_gsync(void)
+{
+    int mpi_errno = MPI_SUCCESS;
+    CSP_async_stat old_local_stat, new_local_stat;
+    double now = 0.0;
+
+    if (CSP_ENV.async_sched_level < CSP_ASYNC_SCHED_ANYTIME)
+        return mpi_errno;
+
+    now = PMPI_Wtime();
+
+    /* only synchronize if interval is large enough. */
+    if ((now - ra_gsync_interavl_sta - CSP_ENV.async_timed_gsync_int) < 0)
+        return mpi_errno;
+
+    /* update local asynchronous status */
+    old_local_stat = CSP_ra_get_async_stat();
+    new_local_stat = CSP_ra_sched_async_stat_impl();
+
+    /* update gsync caches if my status is changed */
+    if (CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_ANYTIME && old_local_stat != new_local_stat)
+        CSP_ra_gsync_update(new_local_stat);
+
+    /* refresh local gsync cache */
+    mpi_errno = CSP_ra_gsync_refresh();
+
+    ra_gsync_interavl_sta = now;
+    return mpi_errno;
+}
+
+#define CSP_RA_GSYNC_GHOST_LOCAL_RANK 0 /* local rank of the ghost process who
+                                         * handles the global asynchronous status
+                                         * synchronization. */
 
 #else
 #define CSP_ra_sched_async_stat() {/*do nothing */}

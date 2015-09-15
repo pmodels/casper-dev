@@ -246,8 +246,10 @@ int CSP_win_coll_sched_async_config(CSP_win * ug_win)
             if (mpi_errno != MPI_SUCCESS)
                 goto fn_fail;
 
-            for (i = 0; i < user_nprocs; i++)
+            for (i = 0; i < user_nprocs; i++) {
                 ug_win->targets[i].synced_async_stat = (CSP_async_stat) tmp_gather_buf[i];
+                ug_win->targets[i].async_stat = my_async_stat;
+            }
         }
     }
     else
@@ -256,8 +258,10 @@ int CSP_win_coll_sched_async_config(CSP_win * ug_win)
         /* Locally set for all targets since the value is globally consistent. */
         my_async_stat = (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_ON) ?
             CSP_ASYNC_ON : CSP_ASYNC_OFF;
-        for (i = 0; i < user_nprocs; i++)
+        for (i = 0; i < user_nprocs; i++) {
             ug_win->targets[i].synced_async_stat = my_async_stat;
+            ug_win->targets[i].async_stat = my_async_stat;
+        }
     }
 
     if (CSP_ENV.verbose >= 2 && user_rank == 0) {

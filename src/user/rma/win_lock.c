@@ -87,7 +87,8 @@ int MPI_Win_lock(int lock_type, int target_rank, int assert, MPI_Win win)
     else
 #endif /*end of CSP_ENABLE_SYNC_ALL_OPT */
     {
-        if (target->synced_async_stat == CSP_ASYNC_ON) {
+        if (target->synced_async_stat == CSP_ASYNC_ON ||
+            CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_ANYTIME) {
             /* lock all ghosts. */
             mpi_errno = CSP_win_target_lock_ghosts(lock_type, assert, target_rank, ug_win);
             if (mpi_errno != MPI_SUCCESS)
@@ -95,7 +96,8 @@ int MPI_Win_lock(int lock_type, int target_rank, int assert, MPI_Win win)
 
             is_g_locked = 1;    /* force lock only when ghosts are locked */
         }
-        else {
+        if (target->synced_async_stat == CSP_ASYNC_OFF ||
+            CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_ANYTIME) {
             /* When async is off on that target, we only lock the target process.
              * Static per-coll scheduling must be collective, thus is invalid during a lock epoch. */
             mpi_errno = CSP_win_target_lock_user(lock_type, assert, target_rank, ug_win);

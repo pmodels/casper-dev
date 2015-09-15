@@ -12,6 +12,7 @@ include_HEADERS = include/casper.h
 libcasper_la_SOURCES = src/mpi_wrap.c	\
                     src/casper.c \
                     src/user/func.c \
+                    src/user/adapt.c \
                     src/user/rma/win_allocate.c \
                     src/user/rma/win_create.c \
                     src/user/rma/win_create_dynamic.c \
@@ -56,6 +57,7 @@ libcasper_la_SOURCES = src/mpi_wrap.c	\
                     src/user/errhan/errhandler_set.c \
                     src/ghost/func.c \
                     src/ghost/main.c \
+                    src/ghost/adapt.c \
                     src/ghost/mpi/finalize.c \
                     src/ghost/rma/win_allocate.c \
                     src/ghost/rma/win_free.c	\
