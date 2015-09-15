@@ -87,7 +87,7 @@ static int CSP_complete_flush(int start_grp_size CSP_ATTRIBUTE((unused)), CSP_wi
         target_rank = ug_win->start_ranks_in_win_group[i];
         target = &(ug_win->targets[target_rank]);
 
-        if (target->synced_async_stat == CSP_TARGET_ASYNC_ON) {
+        if (target->synced_async_stat == CSP_ASYNC_ON) {
             /* only flush ghosts if async is on */
             mpi_errno = CSP_win_target_flush_ghosts(target_rank, ug_win);
             if (mpi_errno != MPI_SUCCESS)

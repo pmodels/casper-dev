@@ -80,7 +80,7 @@ int MPI_Win_flush(int target_rank, MPI_Win win)
     else
 #endif /*end of CSP_ENABLE_SYNC_ALL_OPT */
     {
-        if (target->synced_async_stat == CSP_TARGET_ASYNC_ON) {
+        if (target->synced_async_stat == CSP_ASYNC_ON) {
             /* only flush ghosts if async is on */
             mpi_errno = CSP_win_target_flush_ghosts(target_rank, ug_win);
             if (mpi_errno != MPI_SUCCESS)

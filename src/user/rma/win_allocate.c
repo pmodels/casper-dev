@@ -34,7 +34,7 @@ static unsigned long win_id = 0;
 char CSP_epoch_types_name[128];
 char CSP_async_level_name[128];
 char CSP_async_config_name[16];
-char CSP_target_async_stat_name[16];
+char CSP_async_stat_name[16];
 
 static int read_win_info(MPI_Info info, CSP_win * ug_win)
 {
@@ -596,7 +596,7 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
 
     int tmp_bcast_buf[2];
     MPI_Info shared_info = MPI_INFO_NULL;
-    CSP_target_async_stat my_async_stat = CSP_TARGET_ASYNC_NONE;
+    CSP_async_stat my_async_stat = CSP_ASYNC_NONE;
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
     int all_targets_async_off = 1;
 #endif
@@ -694,7 +694,7 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     {
         /* Locally set for all targets since the value is globally consistent. */
         my_async_stat = (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_ON) ?
-            CSP_TARGET_ASYNC_ON : CSP_TARGET_ASYNC_OFF;
+            CSP_ASYNC_ON : CSP_ASYNC_OFF;
         for (i = 0; i < user_nprocs; i++)
             ug_win->targets[i].synced_async_stat = my_async_stat;
     }
@@ -729,8 +729,8 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
         if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
             ug_win->targets[i].synced_async_stat =
-                (CSP_target_async_stat) tmp_gather_buf[tmp_gather_cnt * i + 7];
-            all_targets_async_off &= (ug_win->targets[i].synced_async_stat == CSP_TARGET_ASYNC_OFF);
+                (CSP_async_stat) tmp_gather_buf[tmp_gather_cnt * i + 7];
+            all_targets_async_off &= (ug_win->targets[i].synced_async_stat == CSP_ASYNC_OFF);
         }
 #endif
 

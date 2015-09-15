@@ -121,7 +121,7 @@ static int CSP_get_impl(void *origin_addr, int origin_count,
     CSP_target_get_epoch_win(0, target, ug_win, win_ptr);
 
     /* If the target is async-off, directly send to the target via internal window. */
-    if (target->synced_async_stat == CSP_TARGET_ASYNC_OFF) {
+    if (target->synced_async_stat == CSP_ASYNC_OFF) {
         mpi_errno = PMPI_Get(origin_addr, origin_count, origin_datatype,
                              target->ug_rank, target_disp, target_count, target_datatype, *win_ptr);
 

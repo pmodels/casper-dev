@@ -11,16 +11,16 @@
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
 
-static CSP_target_async_stat CSP_MY_ASYNC_STAT = CSP_TARGET_ASYNC_NONE;
+static CSP_async_stat CSP_MY_ASYNC_STAT = CSP_ASYNC_NONE;
 
 void CSP_ra_update_async_stat(CSP_async_config async_config)
 {
     switch (async_config) {
     case CSP_ASYNC_CONFIG_ON:
-        CSP_MY_ASYNC_STAT = CSP_TARGET_ASYNC_ON;
+        CSP_MY_ASYNC_STAT = CSP_ASYNC_ON;
         break;
     case CSP_ASYNC_CONFIG_OFF:
-        CSP_MY_ASYNC_STAT = CSP_TARGET_ASYNC_OFF;
+        CSP_MY_ASYNC_STAT = CSP_ASYNC_OFF;
         break;
     case CSP_ASYNC_CONFIG_AUTO:
         /* keep original value. */
@@ -29,7 +29,7 @@ void CSP_ra_update_async_stat(CSP_async_config async_config)
 }
 
 /* Get current asynchronous status. */
-CSP_target_async_stat CSP_ra_get_async_stat(void)
+CSP_async_stat CSP_ra_get_async_stat(void)
 {
     return CSP_MY_ASYNC_STAT;
 }
@@ -42,7 +42,7 @@ void CSP_ra_sched_async_stat(void)
 {
     double interval;
     int freq = 0;
-    CSP_target_async_stat old_stat CSP_ATTRIBUTE((unused)) = CSP_MY_ASYNC_STAT;
+    CSP_async_stat old_stat CSP_ATTRIBUTE((unused)) = CSP_MY_ASYNC_STAT;
     char old_stat_name[16] CSP_ATTRIBUTE((unused));
 
     /* schedule async config by using dynamic frequency */
@@ -50,10 +50,10 @@ void CSP_ra_sched_async_stat(void)
     freq = (int) (CSP_RM[CSP_RM_COMM_FREQ].time / interval * 100);
 
     if (freq >= CSP_ENV.async_sched_thr_h) {
-        CSP_MY_ASYNC_STAT = CSP_TARGET_ASYNC_OFF;
+        CSP_MY_ASYNC_STAT = CSP_ASYNC_OFF;
     }
     else if (freq <= CSP_ENV.async_sched_thr_l) {
-        CSP_MY_ASYNC_STAT = CSP_TARGET_ASYNC_ON;
+        CSP_MY_ASYNC_STAT = CSP_ASYNC_ON;
     }
 
 #ifdef CSP_DEBUG
