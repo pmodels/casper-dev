@@ -60,4 +60,5 @@ libcasper_la_SOURCES = src/mpi_wrap.c	\
                     src/ghost/rma/win_allocate.c \
                     src/ghost/rma/win_free.c	\
                     src/util/queue.c	\
+                    src/util/sbcast.c	\
                     src/util/info.c
