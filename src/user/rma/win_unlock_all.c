@@ -108,7 +108,7 @@ int MPI_Win_unlock_all(MPI_Win win)
     int i;
 
     CSP_DBG_PRINT_FCNAME();
-    CSP_rm_count_start(CSP_RM_COMM_FREQ);
+    CSP_MPI_FUNC_START_ROUTINE();
 
     CSP_fetch_ug_win_from_cache(win, ug_win);
 
@@ -175,7 +175,7 @@ int MPI_Win_unlock_all(MPI_Win win)
     ug_win->epoch_stat = CSP_WIN_NO_EPOCH;
 
   fn_exit:
-    CSP_rm_count_end(CSP_RM_COMM_FREQ);
+    CSP_MPI_FUNC_END_ROUTINE();
     return mpi_errno;
 
   fn_fail:

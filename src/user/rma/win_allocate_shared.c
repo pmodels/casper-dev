@@ -14,7 +14,7 @@ int MPI_Win_allocate_shared(MPI_Aint size, int disp_unit, MPI_Info info, MPI_Com
     int mpi_errno = MPI_SUCCESS;
 
     CSP_DBG_PRINT_FCNAME();
-    CSP_rm_count_start(CSP_RM_COMM_FREQ);
+    CSP_MPI_FUNC_START_ROUTINE();
 
     if (comm == MPI_COMM_WORLD)
         comm = CSP_COMM_USER_WORLD;
@@ -22,6 +22,6 @@ int MPI_Win_allocate_shared(MPI_Aint size, int disp_unit, MPI_Info info, MPI_Com
 
     CSP_WARN_PRINT("called PMPI_Win_allocate_shared, no asynchronous progress on win 0x%x\n", *win);
 
-    CSP_rm_count_end(CSP_RM_COMM_FREQ);
+    CSP_MPI_FUNC_END_ROUTINE();
     return mpi_errno;
 }

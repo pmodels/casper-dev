@@ -176,7 +176,7 @@ int MPI_Accumulate(const void *origin_addr, int origin_count,
     CSP_win *ug_win;
 
     CSP_DBG_PRINT_FCNAME();
-    CSP_rm_count_start(CSP_RM_COMM_FREQ);
+    CSP_MPI_FUNC_START_ROUTINE();
 
     CSP_fetch_ug_win_from_cache(win, ug_win);
 
@@ -193,6 +193,6 @@ int MPI_Accumulate(const void *origin_addr, int origin_count,
                                     target_datatype, op, win);
     }
 
-    CSP_rm_count_end(CSP_RM_COMM_FREQ);
+    CSP_MPI_FUNC_END_ROUTINE();
     return mpi_errno;
 }

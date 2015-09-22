@@ -95,7 +95,7 @@ int MPI_Win_start(MPI_Group group, int assert, MPI_Win win)
     int i;
 
     CSP_DBG_PRINT_FCNAME();
-    CSP_rm_count_start(CSP_RM_COMM_FREQ);
+    CSP_MPI_FUNC_START_ROUTINE();
 
     CSP_fetch_ug_win_from_cache(win, ug_win);
 
@@ -192,7 +192,7 @@ int MPI_Win_start(MPI_Group group, int assert, MPI_Win win)
     CSP_DBG_PRINT("Start done\n");
 
   fn_exit:
-    CSP_rm_count_end(CSP_RM_COMM_FREQ);
+    CSP_MPI_FUNC_END_ROUTINE();
     return mpi_errno;
 
   fn_fail:

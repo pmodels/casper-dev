@@ -992,5 +992,11 @@ extern CSP_async_stat CSP_ra_get_async_stat(void);
 
 #endif /* end of CSP_ENABLE_RUNTIME_ASYNC_SCHED */
 
+#define CSP_MPI_FUNC_START_ROUTINE() do {                 \
+        CSP_rm_count_start(CSP_RM_COMM_FREQ);             \
+        } while (0)
+#define CSP_MPI_FUNC_END_ROUTINE() do {                   \
+        CSP_rm_count_end(CSP_RM_COMM_FREQ);               \
+        } while (0)
 
 #endif /* CSP_H_ */

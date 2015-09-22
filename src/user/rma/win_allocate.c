@@ -602,7 +602,7 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
 #endif
 
     CSP_DBG_PRINT_FCNAME();
-    CSP_rm_count_start(CSP_RM_COMM_FREQ);
+    CSP_MPI_FUNC_START_ROUTINE();
 
     ug_win = CSP_calloc(1, sizeof(CSP_win));
 
@@ -923,7 +923,7 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     if (tmp_gather_buf)
         free(tmp_gather_buf);
 
-    CSP_rm_count_end(CSP_RM_COMM_FREQ);
+    CSP_MPI_FUNC_END_ROUTINE();
     return mpi_errno;
 
   fn_noasync:

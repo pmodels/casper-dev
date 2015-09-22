@@ -173,7 +173,7 @@ int MPI_Compare_and_swap(const void *origin_addr, const void *compare_addr,
     CSP_win *ug_win;
 
     CSP_DBG_PRINT_FCNAME();
-    CSP_rm_count_start(CSP_RM_COMM_FREQ);
+    CSP_MPI_FUNC_START_ROUTINE();
 
     CSP_fetch_ug_win_from_cache(win, ug_win);
 
@@ -188,6 +188,6 @@ int MPI_Compare_and_swap(const void *origin_addr, const void *compare_addr,
                                           datatype, target_rank, target_disp, win);
     }
 
-    CSP_rm_count_end(CSP_RM_COMM_FREQ);
+    CSP_MPI_FUNC_END_ROUTINE();
     return mpi_errno;
 }

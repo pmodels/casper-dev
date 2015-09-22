@@ -192,7 +192,7 @@ while (<INFILE>) {
         # add runtime monitoring
         # TODO : skip local functions
         print CFILE "${tab}int mpi_errno = MPI_SUCCESS;\n";
-        print CFILE "${tab}CSP_rm_count_start(CSP_RM_COMM_FREQ);\n";
+        print CFILE "${tab}CSP_MPI_FUNC_START_ROUTINE();\n";
         
         # check and replace each comm input argument (no *)
         for ($x = 0; $x <= $#arglist; $x++) {
@@ -216,7 +216,7 @@ while (<INFILE>) {
         }
 
         # TODO : skip local functions
-        print CFILE "${tab}CSP_rm_count_end(CSP_RM_COMM_FREQ);\n";
+        print CFILE "${tab}CSP_MPI_FUNC_END_ROUTINE();\n";
         print CFILE "${tab}return mpi_errno;\n";
         
         print CFILE "}\n";

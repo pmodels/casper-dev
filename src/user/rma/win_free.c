@@ -171,7 +171,7 @@ int MPI_Win_free(MPI_Win * win)
     MPI_Status *stats = NULL;
 
     CSP_DBG_PRINT_FCNAME();
-    CSP_rm_count_start(CSP_RM_COMM_FREQ);
+    CSP_MPI_FUNC_START_ROUTINE();
 
     CSP_fetch_ug_win_from_cache(*win, ug_win);
 
@@ -247,7 +247,7 @@ int MPI_Win_free(MPI_Win * win)
     if (stats)
         free(stats);
 
-    CSP_rm_count_end(CSP_RM_COMM_FREQ);
+    CSP_MPI_FUNC_END_ROUTINE();
     return mpi_errno;
 
   fn_fail:
