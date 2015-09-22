@@ -346,7 +346,6 @@ typedef struct CSP_win_target {
 
     CSP_target_epoch_stat epoch_stat;   /* indicate which access epoch is opened for the target. */
     CSP_async_stat synced_async_stat;   /* per-target synchronized async status. Safe for ACC-like operations. */
-    CSP_async_stat async_stat;  /* per-target async status. Should only use for PUT/GET operations. */
 } CSP_win_target;
 
 typedef struct CSP_win {
