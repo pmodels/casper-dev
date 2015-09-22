@@ -6,6 +6,10 @@
 #ifndef SBCAST_H_
 #define SBCAST_H_
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <mpi.h>
+
 typedef struct CSP_sbcast_member_req {
     void *buf;
     int size;

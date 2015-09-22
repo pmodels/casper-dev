@@ -760,10 +760,6 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     if (CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_PER_WIN &&
         ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO && all_targets_async_off)
         goto fn_noasync;
-
-    if (CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_ANYTIME &&
-        ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO)
-        CSP_win_sched_async_config_reset(ug_win);
 #endif
 
     if (user_rank == 0) {

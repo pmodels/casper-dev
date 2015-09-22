@@ -259,7 +259,7 @@ static int CSP_initialize_env()
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
         CSP_INFO_PRINT(1, "Runtime Scheduling Options for Asynchronous Configuration:  \n"
                        "    CSP_RUNTIME_ASYNC_SCHED_THR_L = %d \n"
-                       "    CSP_RUNTIME_ASYNC_SCHED_THR_H = %d \n",
+                       "    CSP_RUNTIME_ASYNC_SCHED_THR_H = %d \n"
                        "    CSP_RUNTIME_ASYNC_TIMED_GSYNC_INT = %lld(s) \n",
                        CSP_ENV.async_sched_thr_l, CSP_ENV.async_sched_thr_h,
                        CSP_ENV.async_timed_gsync_int);

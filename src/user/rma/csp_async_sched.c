@@ -11,8 +11,7 @@
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
 
-static CSP_async_stat CSP_MY_ASYNC_STAT = CSP_ASYNC_NONE;
-static MPI_Aint my_stat_disp = 0;
+static CSP_async_stat CSP_MY_ASYNC_STAT = CSP_ASYNC_ON;
 
 void CSP_ra_update_async_stat(CSP_async_config async_config)
 {
@@ -60,7 +59,7 @@ CSP_async_stat CSP_ra_sched_async_stat_impl(void)
 #if defined(CSP_DEBUG) || defined(CSP_ADAPT_DEBUG)
     strncpy(old_stat_name, CSP_get_target_async_stat_name(old_stat), 16);
 #endif
-    CSP_DBG_PRINT(" my async stat: freq=%d(%.4f/%.4f), %s->%s\n ",
+    CSP_DBG_PRINT(" my async stat: freq=%d(%.4f/%.4f), %s->%s\n",
                   freq, CSP_RM[CSP_RM_COMM_FREQ].time, interval, old_stat_name,
                   CSP_get_target_async_stat_name(CSP_MY_ASYNC_STAT));
 

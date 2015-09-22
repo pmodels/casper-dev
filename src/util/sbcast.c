@@ -68,7 +68,7 @@ int CSP_sbcast_member_test(CSP_sbcast_member_req * req, int *flag)
     /* agent needs to first receive from the root, and then issues ibcast-ibarrier. */
     if (rank == CSP_SBCAST_ROOT_AGENT && req->recv_req != MPI_REQUEST_NULL) {
         int test_flag = 0;
-        MPI_Status stat = MPI_STATUS_NULL;
+        MPI_Status stat;
         mpi_errno = PMPI_Test(&req->recv_req, &test_flag, &stat);
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;

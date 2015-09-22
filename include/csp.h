@@ -1004,7 +1004,7 @@ extern CSP_async_stat CSP_ra_get_async_stat(void);
  * Global asynchronous synchronization routines
  * -------------------------------------------- */
 #define CSP_RUNTIME_ASYNC_TIMED_GSYNC_DEFAULT_INT (180) /* in seconds, 3 mins */
-extern double ra_gsync_interavl_sta = 0.0;
+extern double ra_gsync_interavl_sta;
 extern CSP_async_stat *ra_gsync_local_cache;
 
 extern int CSP_ra_init(void);
@@ -1054,11 +1054,12 @@ static inline int CSP_ra_timed_gsync(void)
 #else
 #define CSP_ra_sched_async_stat() {/*do nothing */}
 #define CSP_ra_get_async_stat() {/*do nothing */}
-
+#define CSP_ra_timed_gsync() {/*do nothing*/}
 #endif /* end of CSP_ENABLE_RUNTIME_ASYNC_SCHED */
 
 #define CSP_MPI_FUNC_START_ROUTINE() do {                 \
         CSP_rm_count_start(CSP_RM_COMM_FREQ);             \
+        CSP_ra_timed_gsync();                             \
         } while (0)
 #define CSP_MPI_FUNC_END_ROUTINE() do {                   \
         CSP_rm_count_end(CSP_RM_COMM_FREQ);               \

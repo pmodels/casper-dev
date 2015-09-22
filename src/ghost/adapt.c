@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "cspg.h"
+#include "sbcast.h"
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
 
@@ -49,6 +50,114 @@ static CSP_sbcast_member_req ra_sbm_req;
 static CSPG_ra_gsync_pkt ra_sbr_pkt = { -1, CSP_ASYNC_NONE };
 static CSPG_ra_gsync_pkt ra_sbm_pkt = { -1, CSP_ASYNC_NONE };
 
+static int ra_gsync_progress(void);
+
+#define CSPG_RA_GSYNC_COMPLETE_TAG 10990
+
+static int ra_gsync_complete(void)
+{
+    int mpi_errno = MPI_SUCCESS;
+    int gsync_nprocs = 0, gsync_rank = 0;
+    int dst = 0, sr_idx = 0;
+    MPI_Request *sr_reqs = NULL;
+    int sr_complete_flag = 0;
+    int sbr_complete_flag = 0, sbm_complete_flag = 0;
+
+    PMPI_Comm_size(CSPG_RA_GSYNC_COMM, &gsync_nprocs);
+    PMPI_Comm_rank(CSPG_RA_GSYNC_COMM, &gsync_rank);
+    sr_reqs = CSP_calloc((gsync_nprocs - 1) * 2, sizeof(MPI_Request));
+
+    /* Ensure all members have arrived here before complete sbcast.
+     * Note that we cannot use ibarrier because it may confuse the ordering of
+     * nbc calls in gsync_progress. */
+    for (dst = 0; dst < gsync_nprocs; dst++) {
+        if (dst == gsync_rank)  /* skip myself. */
+            continue;
+
+        mpi_errno = PMPI_Irecv(NULL, 0, MPI_CHAR, dst, CSPG_RA_GSYNC_COMPLETE_TAG,
+                               CSPG_RA_GSYNC_COMM, &sr_reqs[sr_idx++]);
+        if (mpi_errno != MPI_SUCCESS)
+            goto fn_fail;
+
+        mpi_errno = PMPI_Isend(NULL, 0, MPI_CHAR, dst, CSPG_RA_GSYNC_COMPLETE_TAG,
+                               CSPG_RA_GSYNC_COMM, &sr_reqs[sr_idx++]);
+        if (mpi_errno != MPI_SUCCESS)
+            goto fn_fail;
+        CSPG_DBG_PRINT(" ra_gsync_complete: issue completion send/recv -> %d\n", dst);
+    }
+
+    do {
+        mpi_errno = PMPI_Testall((gsync_nprocs - 1) * 2, sr_reqs, &sr_complete_flag,
+                                 MPI_STATUS_IGNORE);
+        if (mpi_errno != MPI_SUCCESS)
+            goto fn_fail;
+
+        /* Make progress to receive all pending sbcast root messages until all members
+         * have arrived here. */
+        mpi_errno = ra_gsync_progress();
+        if (mpi_errno != MPI_SUCCESS)
+            goto fn_fail;
+    } while (!sr_complete_flag);
+    CSPG_DBG_PRINT(" ra_gsync_complete: all completion send/recv done\n");
+
+    /* Ensure my local root call is done. */
+    while (!CSP_sbcast_root_is_completed(ra_sbr_req)) {
+        int test_flag = 0;
+        mpi_errno = CSP_sbcast_root_test(&ra_sbr_req, &test_flag);
+        if (mpi_errno != MPI_SUCCESS)
+            goto fn_fail;
+    }
+    sbr_complete_flag = 1;
+    CSPG_DBG_PRINT(" ra_gsync_complete: all sbcast-root done\n");
+
+    /* The first member sends a empty packet to finish the last posted member calls. */
+    if (gsync_rank == 0) {
+        mpi_errno = CSP_sbcast_root(&ra_sbr_pkt, sizeof(CSPG_ra_gsync_pkt),
+                                    CSPG_RA_GSYNC_COMM, &ra_sbr_req);
+        sbr_complete_flag = 0;  /* the first member has one posted root call */
+    }
+
+    /* Wait till both the root and the member calls are completed. */
+    do {
+        /* only the first member posted a sbcast-root. */
+        if (!sbr_complete_flag) {
+            mpi_errno = CSP_sbcast_root_test(&ra_sbr_req, &sbr_complete_flag);
+            if (mpi_errno != MPI_SUCCESS)
+                goto fn_fail;
+        }
+        if (!sbm_complete_flag) {
+            mpi_errno = CSP_sbcast_member_test(&ra_sbm_req, &sbm_complete_flag);
+            if (mpi_errno != MPI_SUCCESS)
+                goto fn_fail;
+        }
+    } while (!sbr_complete_flag || !sbm_complete_flag);
+    CSPG_DBG_PRINT(" ra_gsync_complete: done\n");
+
+  fn_exit:
+    if (sr_reqs)
+        free(sr_reqs);
+    return mpi_errno;
+
+  fn_fail:
+    goto fn_exit;
+}
+
+static CSP_async_stat ra_get_init_async_stat()
+{
+    CSP_async_stat init_async_stat = CSP_ASYNC_NONE;
+
+    switch (CSP_ENV.async_config) {
+    case CSP_ASYNC_CONFIG_ON:
+    case CSP_ASYNC_CONFIG_AUTO:
+        init_async_stat = CSP_ASYNC_ON;
+        break;
+    case CSP_ASYNC_CONFIG_OFF:
+        init_async_stat = CSP_ASYNC_OFF;
+        break;
+    }
+    return init_async_stat;
+}
+
 void CSPG_ra_finalize(void)
 {
     int local_rank = 0;
@@ -56,8 +165,10 @@ void CSPG_ra_finalize(void)
     if (CSP_ENV.async_sched_level < CSP_ASYNC_SCHED_ANYTIME)
         return;
 
-    PMPI_Comm_rank(CSP_COMM_LOCAL, &local_rank);
+    /* complete all gsync communication */
+    ra_gsync_complete();
 
+    PMPI_Comm_rank(CSP_COMM_LOCAL, &local_rank);
     if (shm_global_stats_region.win && shm_global_stats_region.win != MPI_WIN_NULL) {
         if (local_rank == CSP_RA_GSYNC_GHOST_LOCAL_RANK)
             PMPI_Win_unlock(CSP_RA_GSYNC_GHOST_LOCAL_RANK, shm_global_stats_region.win);
@@ -92,9 +203,10 @@ int CSPG_ra_init(void)
 {
     int mpi_errno = MPI_SUCCESS;
     int local_rank = 0, local_nprocs = 0, nprocs = 0;
-    int gsync_rank = 0;
+    int gsync_rank = 0, gsync_nprocs = 0;
     MPI_Aint region_size = 0;
     MPI_Request *reqs = NULL;
+    CSP_async_stat init_async_stat = CSP_ASYNC_NONE;
     int i;
 
     if (CSP_ENV.async_sched_level < CSP_ASYNC_SCHED_ANYTIME)
@@ -105,6 +217,13 @@ int CSPG_ra_init(void)
     PMPI_Comm_size(MPI_COMM_WORLD, &nprocs);
     num_local_stats = local_nprocs - CSP_ENV.num_g;     /* number of processes per node can be different,
                                                          * but number of ghosts per node is fixed.*/
+
+    /* create a gsync ghost communicator */
+    mpi_errno = PMPI_Comm_split(MPI_COMM_WORLD, local_rank == CSP_RA_GSYNC_GHOST_LOCAL_RANK,
+                                1, &CSPG_RA_GSYNC_COMM);
+    PMPI_Comm_rank(CSPG_RA_GSYNC_COMM, &gsync_rank);
+    PMPI_Comm_size(CSPG_RA_GSYNC_COMM, &gsync_nprocs);
+    CSPG_DBG_PRINT(" ra_init: create gsync_comm, I am %d/%d\n", gsync_rank, gsync_nprocs);
 
     /* allocate shared region among local node for storing all processes' statuses */
     region_size = sizeof(CSP_async_stat) * (nprocs - CSP_ENV.num_g * CSP_NUM_NODES);
@@ -138,8 +257,13 @@ int CSPG_ra_init(void)
 
     shm_global_stats_ptr = shm_global_stats_region.base;
     prev_local_stats = CSP_calloc(num_local_stats, sizeof(CSP_async_stat));
-    for (i = 0; i < num_local_stats; i++)
-        prev_local_stats[i] = CSP_ASYNC_NONE;
+
+    /* initialize asynchronous state in cache */
+    init_async_stat = ra_get_init_async_stat();
+    for (i = 0; i < num_local_stats; i++) {
+        prev_local_stats[i] = init_async_stat;
+        shm_global_stats_ptr[i] = init_async_stat;
+    }
 
     /* gsync ghost receives local user processes' rank in comm_user_world. */
     local_u_ranks_in_user_world = CSP_calloc(num_local_stats, sizeof(int));
@@ -158,11 +282,6 @@ int CSPG_ra_init(void)
     CSPG_DBG_PRINT(" ra_init: local users in user world:\n");
     for (i = 0; i < num_local_stats; i++)
         CSPG_DBG_PRINT(" \t[%d] = %d\n", i, local_u_ranks_in_user_world[i]);
-
-    /* create a gsync ghost communicator */
-    mpi_errno = PMPI_Comm_split(MPI_COMM_WORLD, local_rank == CSP_RA_GSYNC_GHOST_LOCAL_RANK,
-                                1, &CSPG_RA_GSYNC_COMM);
-    PMPI_Comm_rank(CSPG_RA_GSYNC_COMM, &gsync_rank);
 
     /* Initialize global requests */
     CSP_sbcast_root_req_init(&ra_sbr_req);
@@ -270,9 +389,8 @@ static int nxt_idx = 0;
 int CSPG_ra_gsync(void)
 {
     int mpi_errno = MPI_SUCCESS;
-    CSP_async_stat *local_async_stats = NULL;
-    int local_rank = 0, gsync_rank = 0;
-    int i;
+    int local_rank = 0;
+    int i = 0, idx = 0;
 
     PMPI_Comm_rank(CSP_COMM_LOCAL, &local_rank);
     if (CSP_ENV.async_sched_level < CSP_ASYNC_SCHED_ANYTIME || local_rank > 0)
@@ -280,12 +398,14 @@ int CSPG_ra_gsync(void)
 
     ra_gsync_progress();
 
-    for (i = nxt_idx; i != nxt_idx; i = (i + 1) % num_local_stats) {
+    for (i = 0; i < num_local_stats; i++) {
         int user_rank = local_u_ranks_in_user_world[i];
         int sent_flag = 0;
 
+        idx = (i + nxt_idx) % num_local_stats;
+
         /* issue message if a user has updated its status */
-        if (shm_global_stats_ptr[user_rank] != prev_local_stats[i]) {
+        if (shm_global_stats_ptr[user_rank] != prev_local_stats[idx]) {
             mpi_errno = ra_gsync_issue(user_rank, shm_global_stats_ptr[user_rank], &sent_flag);
             if (mpi_errno != MPI_SUCCESS)
                 goto fn_fail;
@@ -295,8 +415,8 @@ int CSPG_ra_gsync(void)
                 goto fn_fail;
 
             if (sent_flag) {
-                prev_local_stats[i] = shm_global_stats_ptr[user_rank];
-                nxt_idx = (i + 1) % num_local_stats;    /* start from the next one */
+                prev_local_stats[idx] = shm_global_stats_ptr[user_rank];
+                nxt_idx = (idx + 1) % num_local_stats;  /* start from the next one */
                 break;
             }
         }
