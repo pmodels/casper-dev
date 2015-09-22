@@ -9,6 +9,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+/* ======================================================================
+ * Generic queue routines.
+ * The routine internally allocate queue element and store the start address
+ * of the user object in it, thus caller can use this routine to maintain queue
+ * for the user objects without any modification of the user structure (i.e., add
+ * pointer members).
+ * ====================================================================== */
+
 typedef struct CSP_queue_elem {
     void *ubuf;
     struct CSP_queue_elem *next;

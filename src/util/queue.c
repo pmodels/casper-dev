@@ -60,6 +60,8 @@ void CSP_queue_destroy(CSP_queue_t * queue)
 }
 
 /* Insert one element into the end of the queue.
+ * An internal element will be allocated and the start address of the user
+ * buffer will be stored in it.
  * Returns 0 if succeed, otherwise -1. */
 int CSP_queue_enqueue(void *ubuf, CSP_queue_t * queue)
 {
