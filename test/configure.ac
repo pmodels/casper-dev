@@ -64,7 +64,7 @@ fi
 
 AC_CONFIG_FILES([Makefile])
 AC_CONFIG_FILES([perf/Makefile])
-AC_CONFIG_FILES([perf/da/Makefile])
+AC_CONFIG_FILES([perf/adapt/Makefile])
 AC_CONFIG_FILES([testlist])
 AC_CONFIG_FILES([runtest])
 AC_OUTPUT_COMMANDS([chmod a+x runtest])
