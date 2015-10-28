@@ -125,6 +125,23 @@ static int CSP_initialize_env()
         }
     }
 
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+    CSP_ENV.async_auto_stat = CSP_ASYNC_ON;
+    val = getenv("CSP_ASYNC_AUTO_STAT");
+    if (val && strlen(val)) {
+        if (!strncmp(val, "on", strlen("on"))) {
+            CSP_ENV.async_auto_stat = CSP_ASYNC_ON;
+        }
+        else if (!strncmp(val, "off", strlen("off"))) {
+            CSP_ENV.async_auto_stat = CSP_ASYNC_OFF;
+        }
+        else {
+            fprintf(stderr, "Unknown CSP_ASYNC_AUTO_STAT %s\n", val);
+            return -1;
+        }
+    }
+#endif
+
     CSP_ENV.async_sched_level = CSP_ASYNC_SCHED_PER_WIN;
     val = getenv("CSP_ASYNC_SCHED_LEVEL");
     if (val && strlen(val)) {
@@ -258,9 +275,11 @@ static int CSP_initialize_env()
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
         CSP_INFO_PRINT(1, "Runtime Scheduling Options for Asynchronous Configuration:  \n"
+                       "    CSP_ASYNC_AUTO_STAT = %s \n"
                        "    CSP_RUNTIME_ASYNC_SCHED_THR_L = %d \n"
                        "    CSP_RUNTIME_ASYNC_SCHED_THR_H = %d \n"
                        "    CSP_RUNTIME_ASYNC_TIMED_GSYNC_INT = %lld(s) \n",
+                       CSP_get_target_async_stat_name(CSP_ENV.async_auto_stat),
                        CSP_ENV.async_sched_thr_l, CSP_ENV.async_sched_thr_h,
                        CSP_ENV.async_timed_gsync_int);
 #endif

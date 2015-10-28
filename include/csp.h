@@ -184,6 +184,12 @@ typedef enum {
 } CSP_async_config;
 
 typedef enum {
+    CSP_ASYNC_ON = 0,
+    CSP_ASYNC_OFF = 1,
+    CSP_ASYNC_NONE = 99 /* initial state */
+} CSP_async_stat;
+
+typedef enum {
     CSP_ASYNC_CONFIG_PHASE_LOCAL_UPDATE = 1,
     CSP_ASYNC_CONFIG_PHASE_REMOTE_EXCHANGE = 2
 } CSP_async_config_phase;
@@ -224,7 +230,6 @@ typedef struct CSP_env_param {
     int verbose;                /* verbose level. print configuration information. */
     int file_verbose;           /* verbose level. print configuration information in files. */
     CSP_async_config async_config;
-
     CSP_async_sched_level async_sched_level;
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
@@ -233,6 +238,7 @@ typedef struct CSP_env_param {
     int async_sched_thr_h;      /* high threshold */
     long long async_timed_gsync_int;    /* the interval between two timed
                                          * local scheduling (in seconds) */
+    CSP_async_stat async_auto_stat;     /* default state for auto config. */
 #endif
 } CSP_env_param;
 
@@ -261,12 +267,6 @@ typedef enum {
     CSP_WIN_EXP_EPOCH_FENCE,
     CSP_WIN_EXP_EPOCH_PSCW
 } CSP_win_exp_epoch_stat;
-
-typedef enum {
-    CSP_ASYNC_ON = 0,
-    CSP_ASYNC_OFF = 1,
-    CSP_ASYNC_NONE = 99 /* initial state */
-} CSP_async_stat;
 
 typedef enum {
     CSP_FUNC_NULL,

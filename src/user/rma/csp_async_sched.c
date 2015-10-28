@@ -11,7 +11,7 @@
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
 
-static CSP_async_stat CSP_MY_ASYNC_STAT = CSP_ASYNC_ON;
+static CSP_async_stat CSP_MY_ASYNC_STAT = CSP_ASYNC_NONE;
 
 void CSP_ra_update_async_stat(CSP_async_config async_config)
 {
@@ -23,7 +23,10 @@ void CSP_ra_update_async_stat(CSP_async_config async_config)
         CSP_MY_ASYNC_STAT = CSP_ASYNC_OFF;
         break;
     case CSP_ASYNC_CONFIG_AUTO:
-        /* keep original value. */
+        /* set to default state for initialization. Otherwise, keep original value. */
+        if (CSP_MY_ASYNC_STAT == CSP_ASYNC_NONE) {
+            CSP_MY_ASYNC_STAT = CSP_ENV.async_auto_stat;
+        }
         break;
     }
 }

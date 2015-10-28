@@ -125,6 +125,9 @@ int CSP_ra_init(void)
     MPI_Comm tmp_gsync_comm = MPI_COMM_NULL;
     CSP_async_stat init_async_stat = CSP_ASYNC_NONE;
 
+    /* initialize local state */
+    CSP_ra_update_async_stat(CSP_ENV.async_config);
+
     if (CSP_ENV.async_sched_level < CSP_ASYNC_SCHED_ANYTIME)
         goto fn_exit;
 
@@ -174,8 +177,7 @@ int CSP_ra_init(void)
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
-    /* initialize local state and local cache */
-    CSP_ra_update_async_stat(CSP_ENV.async_config);
+    /* initialize local cache */
     init_async_stat = CSP_ra_get_async_stat();
     for (i = 0; i < user_nprocs; i++)
         ra_gsync_local_cache[i] = init_async_stat;
