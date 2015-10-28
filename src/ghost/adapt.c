@@ -112,6 +112,8 @@ static int ra_gsync_complete(void)
 
     /* The first member sends a empty packet to finish the last posted member calls. */
     if (gsync_rank == 0) {
+        ra_sbr_pkt.user_rank = -1;
+        ra_sbr_pkt.async_stat = CSP_ASYNC_NONE;
         mpi_errno = CSP_sbcast_root(&ra_sbr_pkt, sizeof(CSPG_ra_gsync_pkt),
                                     CSPG_RA_GSYNC_COMM, &ra_sbr_req);
         sbr_complete_flag = 0;  /* the first member has one posted root call */
@@ -327,8 +329,8 @@ static int ra_gsync_issue(int user_rank, CSP_async_stat stat, int *flag)
                                     CSPG_RA_GSYNC_COMM, &ra_sbr_req);
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
-        CSP_DBG_PRINT(" ra_gsyc_issue: sent user %d, stat %d\n",
-                      ra_sbr_pkt.user_rank, ra_sbr_pkt.async_stat);
+        CSPG_DBG_PRINT(">>> ra_gsyc_issue: sent user %d, stat %d\n",
+                       ra_sbr_pkt.user_rank, ra_sbr_pkt.async_stat);
 
         (*flag) = 1;
     }
@@ -354,6 +356,7 @@ static int ra_gsync_progress(void)
                                       CSPG_RA_GSYNC_COMM, &ra_sbm_req);
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
+        CSPG_DBG_PRINT(">>> ra_gsync_progress: post sbcast-member\n");
     }
 
     /* test on the current outstanding request */
@@ -364,8 +367,8 @@ static int ra_gsync_progress(void)
     if (test_flag) {
         /* update cache of local status */
         shm_global_stats_ptr[ra_sbm_pkt.user_rank] = ra_sbm_pkt.async_stat;
-        CSP_DBG_PRINT(" ra_gsync_progress: received: user %d, stat %d\n",
-                      ra_sbm_pkt.user_rank, ra_sbm_pkt.async_stat);
+        CSPG_DBG_PRINT(">>> ra_gsync_progress: received: user %d, stat %d\n",
+                       ra_sbm_pkt.user_rank, ra_sbm_pkt.async_stat);
 
         /* reset temp buffer */
         ra_sbm_pkt.user_rank = -1;

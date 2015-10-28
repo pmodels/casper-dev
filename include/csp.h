@@ -82,9 +82,22 @@
     fprintf(stdout, "[CSP][%d]"str, CSP_MY_RANK_IN_WORLD, ## __VA_ARGS__); \
     fflush(stdout); \
     } while (0)
+#define CSP_ADAPT_DBG_PRINT(str,...) do { \
+    fprintf(stdout, "[CSP][%d]"str, CSP_MY_RANK_IN_WORLD, ## __VA_ARGS__); \
+    fflush(stdout); \
+    } while (0)
 #else
 #define CSP_DBG_PRINT(str,...) {}
+#ifdef CSP_ADAPT_DEBUG
+#define CSP_ADAPT_DBG_PRINT(str,...) do { \
+        fprintf(stdout, "[CSP][%d]"str, CSP_MY_RANK_IN_WORLD, ## __VA_ARGS__); \
+        fflush(stdout); \
+        } while (0)
+#else
+#define CSP_ADAPT_DBG_PRINT(str,...) {}
 #endif
+#endif
+
 
 /* #define WARN */
 #ifdef CSP_WARN

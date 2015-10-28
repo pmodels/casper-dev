@@ -62,9 +62,9 @@ CSP_async_stat CSP_ra_sched_async_stat_impl(void)
 #if defined(CSP_DEBUG) || defined(CSP_ADAPT_DEBUG)
     strncpy(old_stat_name, CSP_get_target_async_stat_name(old_stat), 16);
 #endif
-    CSP_DBG_PRINT(" my async stat: freq=%d(%.4f/%.4f), %s->%s\n",
-                  freq, CSP_RM[CSP_RM_COMM_FREQ].time, interval, old_stat_name,
-                  CSP_get_target_async_stat_name(CSP_MY_ASYNC_STAT));
+    CSP_ADAPT_DBG_PRINT(" my async stat: freq=%d(%.4f/%.4f), %s->%s\n",
+                        freq, CSP_RM[CSP_RM_COMM_FREQ].time, interval, old_stat_name,
+                        CSP_get_target_async_stat_name(CSP_MY_ASYNC_STAT));
 
     CSP_RM[CSP_RM_COMM_FREQ].last_time = CSP_RM[CSP_RM_COMM_FREQ].time;
     CSP_RM[CSP_RM_COMM_FREQ].last_interval = interval;

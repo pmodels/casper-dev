@@ -55,7 +55,8 @@ int CSP_ra_gsync_update(CSP_async_stat my_stat)
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
-    CSP_DBG_PRINT(">>> ra_gsync_update: update cache[%ld]=%d\n", my_stat_local_index, my_stat);
+    CSP_ADAPT_DBG_PRINT(">>> ra_gsync_update: update cache[%ld]=%d\n", my_stat_local_index,
+                        my_stat);
 
   fn_exit:
     return mpi_errno;
@@ -69,12 +70,13 @@ int CSP_ra_gsync_update(CSP_async_stat my_stat)
 int CSP_ra_gsync_refresh(void)
 {
     int mpi_errno = MPI_SUCCESS;
-    int user_nprocs = 0;
+    int user_nprocs = 0, user_rank = 0;
 
     if (CSP_ENV.async_sched_level < CSP_ASYNC_SCHED_ANYTIME)
         goto fn_exit;
 
     PMPI_Comm_size(CSP_COMM_USER_WORLD, &user_nprocs);
+    PMPI_Comm_rank(CSP_COMM_USER_WORLD, &user_rank);
 
     /* per-integer atomic read. */
     mpi_errno = PMPI_Get_accumulate(NULL, 0, MPI_INT, ra_gsync_local_cache, user_nprocs, MPI_INT,
@@ -87,7 +89,21 @@ int CSP_ra_gsync_refresh(void)
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
-    CSP_DBG_PRINT(">>> ra_gsync_refresh: done\n");
+
+    CSP_ADAPT_DBG_PRINT(">>> ra_gsync_refresh: done\n");
+
+    if (CSP_ENV.verbose > 2 && user_rank == 0) {
+        int async_on_cnt = 0, async_off_cnt = 0, i = 0;
+        for (i = 0; i < user_nprocs; i++) {
+            if (ra_gsync_local_cache[i] == CSP_ASYNC_ON) {
+                async_on_cnt++;
+            }
+            else {
+                async_off_cnt++;
+            }
+        }
+        CSP_INFO_PRINT(3, "GSYNC local cache: on %d; off %d\n", async_on_cnt, async_off_cnt);
+    }
 
   fn_exit:
     return mpi_errno;
@@ -169,8 +185,8 @@ int CSP_ra_init(void)
 
     my_stat_local_index = user_rank;
     my_stat_shm_disp = sizeof(int) * user_rank;
-    CSP_DBG_PRINT(" ra_init: allocated shm_reg %p, size %ld, my_disp=%lx\n",
-                  shm_global_stats_region.base, region_size, my_stat_shm_disp);
+    CSP_ADAPT_DBG_PRINT(" ra_init: allocated shm_reg %p, size %ld, my_disp=%lx\n",
+                        shm_global_stats_region.base, region_size, my_stat_shm_disp);
 
     /* send my user rank to the gsync ghost */
     mpi_errno = PMPI_Send(&user_rank, 1, MPI_INT, CSP_RA_GSYNC_GHOST_LOCAL_RANK, 0, CSP_COMM_LOCAL);
