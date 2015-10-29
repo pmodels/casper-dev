@@ -249,6 +249,7 @@ typedef struct CSP_env_param {
     /* runtime scheduling options for asynchronous progress configuration */
     int async_sched_thr_l;      /* low threshold */
     int async_sched_thr_h;      /* high threshold */
+    double async_sched_min_int; /* minimal interval during two scheduling (in seconds). */
     long long async_timed_gsync_int;    /* the interval between two timed
                                          * local scheduling (in seconds) */
     CSP_async_stat async_auto_stat;     /* default state for auto config. */
@@ -966,10 +967,18 @@ extern int CSP_win_coll_sched_async_config(CSP_win * ug_win);
  * Local asynchronous scheduling routines
  * ------------------------------------------ */
 #define CSP_RUNTIME_ASYNC_SCHED_THR_DEFAULT_FREQ (50)
+#define CSP_RUNTIME_ASYNC_SCHED_DEFAULT_INT (0.1)       /* in seconds */
 
 extern void CSP_ra_update_async_stat(CSP_async_config async_config);
 extern CSP_async_stat CSP_ra_sched_async_stat_impl(void);
-extern void CSP_ra_sched_async_stat(void);
+
+/* Immediately reschedule local asynchronous status according to runtime
+ * profiling data.
+ * Note that we separate rescheduling and getting functions in order to
+ * allow processes to locally reschedule once, and remotely exchange for
+ * different windows multiple-times with the same status. */
+#define CSP_ra_sched_async_stat CSP_ra_sched_async_stat_impl
+
 extern CSP_async_stat CSP_ra_get_async_stat(void);
 
 /* --------------------------------------------

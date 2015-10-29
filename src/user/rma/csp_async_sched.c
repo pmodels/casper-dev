@@ -52,6 +52,10 @@ CSP_async_stat CSP_ra_sched_async_stat_impl(void)
     interval = PMPI_Wtime() - CSP_RM[CSP_RM_COMM_FREQ].interval_sta;
     freq = (int) (CSP_RM[CSP_RM_COMM_FREQ].time / interval * 100);
 
+    /* do not change state if interval is too short */
+    if (interval < CSP_ENV.async_sched_min_int)
+        return CSP_MY_ASYNC_STAT;
+
     if (freq >= CSP_ENV.async_sched_thr_h) {
         CSP_MY_ASYNC_STAT = CSP_ASYNC_OFF;
     }
@@ -73,20 +77,5 @@ CSP_async_stat CSP_ra_sched_async_stat_impl(void)
     CSP_rm_reset(CSP_RM_COMM_FREQ);
 
     return CSP_MY_ASYNC_STAT;
-}
-
-/* Immediately reschedule local asynchronous status according to runtime
- * profiling data.
- * Note that we separate rescheduling and getting functions in order to
- * allow processes to locally reschedule once, and remotely exchange for
- * different windows multiple-times with the same status. */
-void CSP_ra_sched_async_stat(void)
-{
-    /* For anytime level scheduling, the status should be automatically
-     * updated by other routines at set interval. */
-    if (CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_ANYTIME)
-        return;
-
-    CSP_ra_sched_async_stat_impl();
 }
 #endif

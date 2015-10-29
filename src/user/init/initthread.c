@@ -221,6 +221,16 @@ static int CSP_initialize_env()
         return -1;
     }
 
+    CSP_ENV.async_sched_min_int = CSP_RUNTIME_ASYNC_SCHED_DEFAULT_INT;
+    val = getenv("CSP_RUNTIME_ASYNC_SCHED_MIN_INT");
+    if (val && strlen(val)) {
+        CSP_ENV.async_sched_min_int = atof(val);
+    }
+    if (CSP_ENV.async_sched_min_int < 0) {
+        CSP_ERR_PRINT("Wrong async_sched_min_int %lf\n", CSP_ENV.async_sched_min_int);
+        return -1;
+    }
+
     val = getenv("CSP_RUNTIME_ASYNC_TIMED_GSYNC_INT");
     if (val && strlen(val)) {
         CSP_ENV.async_timed_gsync_int = atoll(val);
@@ -278,10 +288,11 @@ static int CSP_initialize_env()
                        "    CSP_ASYNC_AUTO_STAT = %s \n"
                        "    CSP_RUNTIME_ASYNC_SCHED_THR_L = %d \n"
                        "    CSP_RUNTIME_ASYNC_SCHED_THR_H = %d \n"
+                       "    CSP_RUNTIME_ASYNC_SCHED_MIN_INT = %lf \n"
                        "    CSP_RUNTIME_ASYNC_TIMED_GSYNC_INT = %lld(s) \n",
                        CSP_get_target_async_stat_name(CSP_ENV.async_auto_stat),
                        CSP_ENV.async_sched_thr_l, CSP_ENV.async_sched_thr_h,
-                       CSP_ENV.async_timed_gsync_int);
+                       CSP_ENV.async_sched_min_int, CSP_ENV.async_timed_gsync_int);
 #endif
         CSP_INFO_PRINT(1, "\n");
         fflush(stdout);
