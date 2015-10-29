@@ -755,62 +755,21 @@ static inline const char *CSP_target_get_epoch_stat_name(CSP_win_target * target
 }
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-extern char CSP_async_stat_name[16];
-static inline const char *CSP_get_target_async_stat_name(CSP_async_stat async_stat)
-{
-    memset(CSP_async_stat_name, 0, sizeof(CSP_async_stat_name));
-    switch (async_stat) {
-    case CSP_ASYNC_ON:
-        sprintf(CSP_async_stat_name, "on");
-        break;
-    case CSP_ASYNC_OFF:
-        sprintf(CSP_async_stat_name, "off");
-        break;
-    case CSP_ASYNC_NONE:
-        sprintf(CSP_async_stat_name, "none");
-        break;
-    }
-    return CSP_async_stat_name;
-}
+#define CSP_get_target_async_stat_name(async_stat)                              \
+    (async_stat == CSP_ASYNC_ON) ? "on" :                                       \
+            ((async_stat == CSP_ASYNC_OFF) ? "off" :                            \
+                    ((async_stat == CSP_ASYNC_NONE) ? "none" : ""))
 #endif
 
-extern char CSP_async_config_name[16];
-static inline const char *CSP_get_async_config_name(CSP_async_config async_config)
-{
-    memset(CSP_async_config_name, 0, sizeof(CSP_async_config_name));
-    switch (async_config) {
-    case CSP_ASYNC_CONFIG_ON:
-        sprintf(CSP_async_config_name, "on");
-        break;
-    case CSP_ASYNC_CONFIG_OFF:
-        sprintf(CSP_async_config_name, "off");
-        break;
-#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-    case CSP_ASYNC_CONFIG_AUTO:
-        sprintf(CSP_async_config_name, "auto");
-        break;
-#endif
-    }
-    return CSP_async_config_name;
-}
+#define CSP_get_async_config_name(async_config)                                 \
+    (async_config == CSP_ASYNC_CONFIG_ON) ? "on" :                              \
+            ((async_config == CSP_ASYNC_CONFIG_OFF) ? "off" :                   \
+                    ((async_config == CSP_ASYNC_CONFIG_AUTO) ? "auto" : ""))
 
-extern char CSP_async_level_name[128];
-static inline const char *CSP_get_async_level_name(CSP_async_sched_level async_level)
-{
-    memset(CSP_async_level_name, 0, sizeof(CSP_async_level_name));
-    switch (async_level) {
-    case CSP_ASYNC_SCHED_PER_WIN:
-        sprintf(CSP_async_level_name, "per-win");
-        break;
-    case CSP_ASYNC_SCHED_PER_COLL:
-        sprintf(CSP_async_level_name, "per-coll");
-        break;
-    case CSP_ASYNC_SCHED_ANYTIME:
-        sprintf(CSP_async_level_name, "anytime");
-        break;
-    }
-    return (const char *) CSP_async_level_name;
-}
+#define CSP_get_async_level_name(async_level)                                   \
+    (async_level == CSP_ASYNC_SCHED_PER_WIN) ? "per-win" :                      \
+            ((async_level == CSP_ASYNC_SCHED_PER_WIN) ? "per-coll" :            \
+                    ((async_level == CSP_ASYNC_SCHED_ANYTIME) ? "anytime" : ""))
 
 extern char CSP_epoch_types_name[128];
 static inline const char *CSP_get_epoch_types_name(int epoch_types)
