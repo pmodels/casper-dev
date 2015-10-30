@@ -774,6 +774,15 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
     if (CSP_ENV.verbose >= 2 || CSP_ENV.file_verbose >= 1)
         CSP_win_print_async_config(ug_win);
 
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+    /* update gsync system */
+    if (CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_ANYTIME) {
+        mpi_errno = CSP_win_gsync_update(ug_win);
+        if (mpi_errno != MPI_SUCCESS)
+            goto fn_fail;
+    }
+#endif
+
     /* Notify Ghosts start and create user root + ghosts communicator for
      * internal information exchange between users and ghosts. */
     if (user_local_rank == 0) {

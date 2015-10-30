@@ -26,37 +26,48 @@ double ra_gsync_interavl_sta = 0;
  * synchronization between level-1 and level-2 caches only happens at set interval. */
 static CSP_local_shm_region shm_global_stats_region;
 
-/* The displacement of my status on the shared window. */
-static MPI_Aint my_stat_local_index = 0;
-static MPI_Aint my_stat_shm_disp = 0;
 
-
-/* Update local asynchronous status to the global synchronization cache on
- * ghost process (blocking call).
- * On return, the data must have been written to the memory on ghost process. */
-int CSP_ra_gsync_update(CSP_async_stat my_stat)
+/* Update asynchronous status in local cache and in the global synchronization cache
+ * on ghost process (blocking call). It is called when local state is updated, or
+ * receive other processes' state in win-collective calls.
+ * The caller can set remote_flag to enable or disable remote update to the cache on
+ * ghost process. Usually when local state is updated at set interval, the remote
+ * update is always required; when updating mutiple states, only the local root
+ * process needs to update ghost cache. */
+int CSP_ra_gsync_update(int count, int *user_world_ranks, CSP_async_stat * stats, int remote_flag)
 {
     int mpi_errno = MPI_SUCCESS;
+    int i = 0, rank = 0;
+    MPI_Aint target_disp = 0;
 
     if (CSP_ENV.async_sched_level < CSP_ASYNC_SCHED_ANYTIME)
         goto fn_exit;
 
     /* write to local cache. */
-    ra_gsync_local_cache[my_stat_local_index] = my_stat;
+    for (i = 0; i < count; i++) {
+        rank = user_world_ranks[i];
+        ra_gsync_local_cache[rank] = stats[i];
+    }
 
-    /* per-integer atomic write. */
-    mpi_errno = PMPI_Accumulate(&ra_gsync_local_cache[my_stat_local_index], 1, MPI_INT,
-                                CSP_RA_GSYNC_GHOST_LOCAL_RANK, my_stat_shm_disp, 1,
-                                MPI_INT, MPI_REPLACE, shm_global_stats_region.win);
-    if (mpi_errno != MPI_SUCCESS)
-        goto fn_fail;
+    if (remote_flag == 1) {
+        /* per-integer atomic write. */
+        for (i = 0; i < count; i++) {
+            rank = user_world_ranks[i];
+            target_disp = sizeof(int) * rank;
 
-    mpi_errno = PMPI_Win_flush(CSP_RA_GSYNC_GHOST_LOCAL_RANK, shm_global_stats_region.win);
-    if (mpi_errno != MPI_SUCCESS)
-        goto fn_fail;
+            mpi_errno = PMPI_Accumulate(&ra_gsync_local_cache[rank], 1, MPI_INT,
+                                        CSP_RA_GSYNC_GHOST_LOCAL_RANK, target_disp,
+                                        1, MPI_INT, MPI_REPLACE, shm_global_stats_region.win);
+            if (mpi_errno != MPI_SUCCESS)
+                goto fn_fail;
+        }
 
-    CSP_ADAPT_DBG_PRINT(">>> ra_gsync_update: update cache[%ld]=%d\n", my_stat_local_index,
-                        my_stat);
+        mpi_errno = PMPI_Win_flush(CSP_RA_GSYNC_GHOST_LOCAL_RANK, shm_global_stats_region.win);
+        if (mpi_errno != MPI_SUCCESS)
+            goto fn_fail;
+    }
+
+    CSP_ADAPT_DBG_PRINT(">>> ra_gsync_update: done, count=%d, remote_flag=%d\n", count, remote_flag);
 
   fn_exit:
     return mpi_errno;
@@ -182,11 +193,8 @@ int CSP_ra_init(void)
 
     /* allocate local cache. */
     ra_gsync_local_cache = CSP_calloc(user_nprocs, sizeof(CSP_async_stat));
-
-    my_stat_local_index = user_rank;
-    my_stat_shm_disp = sizeof(int) * user_rank;
-    CSP_ADAPT_DBG_PRINT(" ra_init: allocated shm_reg %p, size %ld, my_disp=%lx\n",
-                        shm_global_stats_region.base, region_size, my_stat_shm_disp);
+    CSP_ADAPT_DBG_PRINT(" ra_init: allocated shm_reg %p, local cache=%p, size %ld\n",
+                        shm_global_stats_region.base, ra_gsync_local_cache, region_size);
 
     /* send my user rank to the gsync ghost */
     mpi_errno = PMPI_Send(&user_rank, 1, MPI_INT, CSP_RA_GSYNC_GHOST_LOCAL_RANK, 0, CSP_COMM_LOCAL);

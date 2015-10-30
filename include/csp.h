@@ -960,6 +960,7 @@ extern int CSP_win_get_async_config_info(MPI_Info info, CSP_async_config * async
                                          int *set_config_flag, int *async_config_phases,
                                          int *set_phases_flag);
 extern int CSP_win_coll_sched_async_config(CSP_win * ug_win);
+extern int CSP_win_gsync_update(CSP_win * ug_win);
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
 
@@ -990,7 +991,8 @@ extern CSP_async_stat *ra_gsync_local_cache;
 
 extern int CSP_ra_init(void);
 extern void CSP_ra_finalize(void);
-extern int CSP_ra_gsync_update(CSP_async_stat my_stat);
+extern int CSP_ra_gsync_update(int count, int *user_world_ranks,
+                               CSP_async_stat * stats, int remote_flag);
 extern int CSP_ra_gsync_refresh(void);
 
 static inline int CSP_ra_gsync_get_stat(int user_rank)
@@ -1018,8 +1020,14 @@ static inline int CSP_ra_timed_gsync(void)
     new_local_stat = CSP_ra_sched_async_stat_impl();
 
     /* update gsync caches if my status is changed */
-    if (CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_ANYTIME && old_local_stat != new_local_stat)
-        CSP_ra_gsync_update(new_local_stat);
+    if (old_local_stat != new_local_stat) {
+        int user_rank = 0;
+
+        PMPI_Comm_rank(CSP_COMM_USER_WORLD, &user_rank);
+        mpi_errno = CSP_ra_gsync_update(1, &user_rank, &new_local_stat, 1 /* remote update */);
+        if (mpi_errno != MPI_SUCCESS)
+            return mpi_errno;
+    }
 
     /* refresh local gsync cache */
     mpi_errno = CSP_ra_gsync_refresh();

@@ -196,6 +196,47 @@ int CSP_win_print_async_config(CSP_win * ug_win)
     goto fn_exit;
 }
 
+/* Update global asynchronous synchronization system when the asynchronous states
+ * of window processes have been updated (i.e., in every win-collective call).
+ * All processes update the local cache, only the root process on each node updates
+ * the ghost cache.*/
+int CSP_win_gsync_update(CSP_win * ug_win)
+{
+    int mpi_errno = MPI_SUCCESS;
+    int i, user_nprocs = 0, local_user_rank = 0;
+    int *ranks_in_world = NULL;
+    CSP_async_stat *async_stats = NULL;
+
+    if (CSP_ENV.async_sched_level < CSP_ASYNC_SCHED_ANYTIME)
+        goto fn_exit;
+
+    PMPI_Comm_rank(ug_win->local_user_comm, &local_user_rank);
+    PMPI_Comm_size(ug_win->user_comm, &user_nprocs);
+
+    ranks_in_world = CSP_calloc(user_nprocs, sizeof(int));
+    async_stats = CSP_calloc(user_nprocs, sizeof(CSP_async_stat));
+
+    for (i = 0; i < user_nprocs; i++) {
+        ranks_in_world[i] = ug_win->targets[i].user_world_rank;
+        async_stats[i] = ug_win->targets[i].synced_async_stat;
+    }
+
+    /* all processes update local cache, only root updates ghost cache. */
+    mpi_errno = CSP_ra_gsync_update(user_nprocs, ranks_in_world, async_stats,
+                                    local_user_rank == 0 /*remote flag */);
+    if (mpi_errno != MPI_SUCCESS)
+        goto fn_fail;
+
+  fn_exit:
+    if (ranks_in_world)
+        free(ranks_in_world);
+    if (async_stats)
+        free(async_stats);
+    return mpi_errno;
+  fn_fail:
+    goto fn_exit;
+}
+
 /* Schedule asynchronous configuration in collective manner.
  * This routine is safe to be used in window collective calls, such as win_fence
  * and win_set_info with symmetric hint (user has to guarantee collective and remote
@@ -238,7 +279,7 @@ int CSP_win_coll_sched_async_config(CSP_win * ug_win)
             my_async_stat = CSP_ra_get_async_stat();
 
             /* exchange with all targets. */
-            tmp_gather_buf = calloc(user_nprocs, sizeof(MPI_Aint));
+            tmp_gather_buf = CSP_calloc(user_nprocs, sizeof(MPI_Aint));
             tmp_gather_buf[user_rank] = (MPI_Aint) my_async_stat;
 
             mpi_errno = PMPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL,
@@ -248,6 +289,13 @@ int CSP_win_coll_sched_async_config(CSP_win * ug_win)
 
             for (i = 0; i < user_nprocs; i++) {
                 ug_win->targets[i].synced_async_stat = (CSP_async_stat) tmp_gather_buf[i];
+            }
+
+            /* update gsync system */
+            if (CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_ANYTIME) {
+                mpi_errno = CSP_win_gsync_update(ug_win);
+                if (mpi_errno != MPI_SUCCESS)
+                    goto fn_fail;
             }
         }
     }
