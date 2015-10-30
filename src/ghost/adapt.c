@@ -83,7 +83,7 @@ static int ra_gsync_complete(void)
                                CSPG_RA_GSYNC_COMM, &sr_reqs[sr_idx++]);
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
-        CSPG_DBG_PRINT(" ra_gsync_complete: issue completion send/recv -> %d\n", dst);
+        CSPG_ADAPT_DBG_PRINT(" ra_gsync_complete: issue completion send/recv -> %d\n", dst);
     }
 
     do {
@@ -98,7 +98,7 @@ static int ra_gsync_complete(void)
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
     } while (!sr_complete_flag);
-    CSPG_DBG_PRINT(" ra_gsync_complete: all completion send/recv done\n");
+    CSPG_ADAPT_DBG_PRINT(" ra_gsync_complete: all completion send/recv done\n");
 
     /* Ensure my local root call is done. */
     while (!CSP_sbcast_root_is_completed(ra_sbr_req)) {
@@ -108,7 +108,7 @@ static int ra_gsync_complete(void)
             goto fn_fail;
     }
     sbr_complete_flag = 1;
-    CSPG_DBG_PRINT(" ra_gsync_complete: all sbcast-root done\n");
+    CSPG_ADAPT_DBG_PRINT(" ra_gsync_complete: all sbcast-root done\n");
 
     /* The first member sends a empty packet to finish the last posted member calls. */
     if (gsync_rank == 0) {
@@ -133,7 +133,7 @@ static int ra_gsync_complete(void)
                 goto fn_fail;
         }
     } while (!sbr_complete_flag || !sbm_complete_flag);
-    CSPG_DBG_PRINT(" ra_gsync_complete: done\n");
+    CSPG_ADAPT_DBG_PRINT(" ra_gsync_complete: done\n");
 
   fn_exit:
     if (sr_reqs)
@@ -225,7 +225,7 @@ int CSPG_ra_init(void)
                                 1, &CSPG_RA_GSYNC_COMM);
     PMPI_Comm_rank(CSPG_RA_GSYNC_COMM, &gsync_rank);
     PMPI_Comm_size(CSPG_RA_GSYNC_COMM, &gsync_nprocs);
-    CSPG_DBG_PRINT(" ra_init: create gsync_comm, I am %d/%d\n", gsync_rank, gsync_nprocs);
+    CSPG_ADAPT_DBG_PRINT(" ra_init: create gsync_comm, I am %d/%d\n", gsync_rank, gsync_nprocs);
 
     /* allocate shared region among local node for storing all processes' statuses */
     region_size = sizeof(CSP_async_stat) * (nprocs - CSP_ENV.num_g * CSP_NUM_NODES);
@@ -254,8 +254,8 @@ int CSPG_ra_init(void)
             goto fn_fail;
     }
 
-    CSPG_DBG_PRINT(" ra_init: allocated shm_reg %p, size %ld\n",
-                   shm_global_stats_region.base, region_size);
+    CSPG_ADAPT_DBG_PRINT(" ra_init: allocated shm_reg %p, size %ld\n",
+                         shm_global_stats_region.base, region_size);
 
     shm_global_stats_ptr = shm_global_stats_region.base;
     prev_local_stats = CSP_calloc(num_local_stats, sizeof(CSP_async_stat));
@@ -281,9 +281,9 @@ int CSPG_ra_init(void)
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
-    CSPG_DBG_PRINT(" ra_init: local users in user world:\n");
+    CSP_ADAPT_DBG_PRINT(" ra_init: local users in user world:\n");
     for (i = 0; i < num_local_stats; i++)
-        CSPG_DBG_PRINT(" \t[%d] = %d\n", i, local_u_ranks_in_user_world[i]);
+        CSPG_ADAPT_DBG_PRINT(" \t[%d] = %d\n", i, local_u_ranks_in_user_world[i]);
 
     /* Initialize global requests */
     CSP_sbcast_root_req_init(&ra_sbr_req);
@@ -329,8 +329,8 @@ static int ra_gsync_issue(int user_rank, CSP_async_stat stat, int *flag)
                                     CSPG_RA_GSYNC_COMM, &ra_sbr_req);
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
-        CSPG_DBG_PRINT(">>> ra_gsyc_issue: sent user %d, stat %d\n",
-                       ra_sbr_pkt.user_rank, ra_sbr_pkt.async_stat);
+        CSPG_ADAPT_DBG_PRINT(">>> ra_gsyc_issue: sent user %d, stat %d\n",
+                             ra_sbr_pkt.user_rank, ra_sbr_pkt.async_stat);
 
         (*flag) = 1;
     }
@@ -356,7 +356,6 @@ static int ra_gsync_progress(void)
                                       CSPG_RA_GSYNC_COMM, &ra_sbm_req);
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
-        CSPG_DBG_PRINT(">>> ra_gsync_progress: post sbcast-member\n");
     }
 
     /* test on the current outstanding request */
@@ -367,8 +366,8 @@ static int ra_gsync_progress(void)
     if (test_flag) {
         /* update cache of local status */
         shm_global_stats_ptr[ra_sbm_pkt.user_rank] = ra_sbm_pkt.async_stat;
-        CSPG_DBG_PRINT(">>> ra_gsync_progress: received: user %d, stat %d\n",
-                       ra_sbm_pkt.user_rank, ra_sbm_pkt.async_stat);
+        CSPG_ADAPT_DBG_PRINT(">>> ra_gsync_progress: received: user %d, stat %d\n",
+                             ra_sbm_pkt.user_rank, ra_sbm_pkt.async_stat);
 
         /* reset temp buffer */
         ra_sbm_pkt.user_rank = -1;

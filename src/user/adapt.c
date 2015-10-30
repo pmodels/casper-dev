@@ -67,8 +67,6 @@ int CSP_ra_gsync_update(int count, int *user_world_ranks, CSP_async_stat * stats
             goto fn_fail;
     }
 
-    CSP_ADAPT_DBG_PRINT(">>> ra_gsync_update: done, count=%d, remote_flag=%d\n", count, remote_flag);
-
   fn_exit:
     return mpi_errno;
   fn_fail:
