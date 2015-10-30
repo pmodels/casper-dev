@@ -172,8 +172,6 @@ void CSPG_ra_finalize(void)
 
     PMPI_Comm_rank(CSP_COMM_LOCAL, &local_rank);
     if (shm_global_stats_region.win && shm_global_stats_region.win != MPI_WIN_NULL) {
-        if (local_rank == CSP_RA_GSYNC_GHOST_LOCAL_RANK)
-            PMPI_Win_unlock(CSP_RA_GSYNC_GHOST_LOCAL_RANK, shm_global_stats_region.win);
         PMPI_Win_free(&shm_global_stats_region.win);
     }
 
@@ -246,12 +244,6 @@ int CSPG_ra_init(void)
                                              &shm_global_stats_region.win);
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
-
-        /* do not need exclusive access, only for later load/store. */
-        mpi_errno = PMPI_Win_lock(MPI_LOCK_SHARED, CSP_RA_GSYNC_GHOST_LOCAL_RANK,
-                                  MPI_MODE_NOCHECK, shm_global_stats_region.win);
-        if (mpi_errno != MPI_SUCCESS)
-            goto fn_fail;
     }
 
     CSPG_ADAPT_DBG_PRINT(" ra_init: allocated shm_reg %p, size %ld\n",
@@ -262,10 +254,17 @@ int CSPG_ra_init(void)
 
     /* initialize asynchronous state in cache */
     init_async_stat = ra_get_init_async_stat();
+    mpi_errno = PMPI_Win_lock(MPI_LOCK_SHARED, CSP_RA_GSYNC_GHOST_LOCAL_RANK,
+                              0, shm_global_stats_region.win);
+    if (mpi_errno != MPI_SUCCESS)
+        goto fn_fail;
     for (i = 0; i < num_local_stats; i++) {
         prev_local_stats[i] = init_async_stat;
         shm_global_stats_ptr[i] = init_async_stat;
     }
+    mpi_errno = PMPI_Win_unlock(CSP_RA_GSYNC_GHOST_LOCAL_RANK, shm_global_stats_region.win);
+    if (mpi_errno != MPI_SUCCESS)
+        goto fn_fail;
 
     /* gsync ghost receives local user processes' rank in comm_user_world. */
     local_u_ranks_in_user_world = CSP_calloc(num_local_stats, sizeof(int));
@@ -330,7 +329,7 @@ static int ra_gsync_issue(int user_rank, CSP_async_stat stat, int *flag)
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
         CSPG_ADAPT_DBG_PRINT(">>> ra_gsyc_issue: sent user %d, stat %d\n",
-                             ra_sbr_pkt.user_rank, ra_sbr_pkt.async_stat);
+                             ra_sbr_pkt.user_rank, (int)ra_sbr_pkt.async_stat);
 
         (*flag) = 1;
     }
@@ -364,10 +363,19 @@ static int ra_gsync_progress(void)
         goto fn_fail;
 
     if (test_flag) {
-        /* update cache of local status */
+        /* write cache of local status */
+        mpi_errno = PMPI_Win_lock(MPI_LOCK_EXCLUSIVE, CSP_RA_GSYNC_GHOST_LOCAL_RANK,
+                                  0, shm_global_stats_region.win);
+        if (mpi_errno != MPI_SUCCESS)
+            goto fn_fail;
+
         shm_global_stats_ptr[ra_sbm_pkt.user_rank] = ra_sbm_pkt.async_stat;
         CSPG_ADAPT_DBG_PRINT(">>> ra_gsync_progress: received: user %d, stat %d\n",
-                             ra_sbm_pkt.user_rank, ra_sbm_pkt.async_stat);
+                             ra_sbm_pkt.user_rank, (int)ra_sbm_pkt.async_stat);
+
+        mpi_errno = PMPI_Win_unlock(CSP_RA_GSYNC_GHOST_LOCAL_RANK, shm_global_stats_region.win);
+        if (mpi_errno != MPI_SUCCESS)
+            goto fn_fail;
 
         /* reset temp buffer */
         ra_sbm_pkt.user_rank = -1;
@@ -403,12 +411,23 @@ int CSPG_ra_gsync(void)
     for (i = 0; i < num_local_stats; i++) {
         int user_rank = local_u_ranks_in_user_world[i];
         int sent_flag = 0;
+        CSP_async_stat stat;
 
         idx = (i + nxt_idx) % num_local_stats;
 
+        /* read state */
+        mpi_errno = PMPI_Win_lock(MPI_LOCK_SHARED, CSP_RA_GSYNC_GHOST_LOCAL_RANK,
+                                  0, shm_global_stats_region.win);
+        if (mpi_errno != MPI_SUCCESS)
+            goto fn_fail;
+        stat = shm_global_stats_ptr[user_rank];
+        mpi_errno = PMPI_Win_unlock(CSP_RA_GSYNC_GHOST_LOCAL_RANK, shm_global_stats_region.win);
+        if (mpi_errno != MPI_SUCCESS)
+            goto fn_fail;
+
         /* issue message if a user has updated its status */
-        if (shm_global_stats_ptr[user_rank] != prev_local_stats[idx]) {
-            mpi_errno = ra_gsync_issue(user_rank, shm_global_stats_ptr[user_rank], &sent_flag);
+        if (stat != prev_local_stats[idx]) {
+            mpi_errno = ra_gsync_issue(user_rank, stat, &sent_flag);
             if (mpi_errno != MPI_SUCCESS)
                 goto fn_fail;
 
@@ -417,7 +436,7 @@ int CSPG_ra_gsync(void)
                 goto fn_fail;
 
             if (sent_flag) {
-                prev_local_stats[idx] = shm_global_stats_ptr[user_rank];
+                prev_local_stats[idx] = stat;
                 nxt_idx = (idx + 1) % num_local_stats;  /* start from the next one */
                 break;
             }

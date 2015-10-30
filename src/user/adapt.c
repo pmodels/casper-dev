@@ -50,6 +50,11 @@ int CSP_ra_gsync_update(int count, int *user_world_ranks, CSP_async_stat * stats
     }
 
     if (remote_flag == 1) {
+        mpi_errno = PMPI_Win_lock(MPI_LOCK_EXCLUSIVE, CSP_RA_GSYNC_GHOST_LOCAL_RANK,
+                                  0, shm_global_stats_region.win);
+        if (mpi_errno != MPI_SUCCESS)
+            goto fn_fail;
+
         /* per-integer atomic write. */
         for (i = 0; i < count; i++) {
             rank = user_world_ranks[i];
@@ -62,7 +67,7 @@ int CSP_ra_gsync_update(int count, int *user_world_ranks, CSP_async_stat * stats
                 goto fn_fail;
         }
 
-        mpi_errno = PMPI_Win_flush(CSP_RA_GSYNC_GHOST_LOCAL_RANK, shm_global_stats_region.win);
+        mpi_errno = PMPI_Win_unlock(CSP_RA_GSYNC_GHOST_LOCAL_RANK, shm_global_stats_region.win);
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
     }
@@ -88,13 +93,18 @@ int CSP_ra_gsync_refresh(void)
     PMPI_Comm_rank(CSP_COMM_USER_WORLD, &user_rank);
 
     /* per-integer atomic read. */
+    mpi_errno = PMPI_Win_lock(MPI_LOCK_SHARED, CSP_RA_GSYNC_GHOST_LOCAL_RANK,
+                              0, shm_global_stats_region.win);
+    if (mpi_errno != MPI_SUCCESS)
+        goto fn_fail;
+
     mpi_errno = PMPI_Get_accumulate(NULL, 0, MPI_INT, ra_gsync_local_cache, user_nprocs, MPI_INT,
                                     CSP_RA_GSYNC_GHOST_LOCAL_RANK, 0, user_nprocs, MPI_INT,
                                     MPI_NO_OP, shm_global_stats_region.win);
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
-    mpi_errno = PMPI_Win_flush(CSP_RA_GSYNC_GHOST_LOCAL_RANK, shm_global_stats_region.win);
+    mpi_errno = PMPI_Win_unlock(CSP_RA_GSYNC_GHOST_LOCAL_RANK, shm_global_stats_region.win);
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
@@ -126,7 +136,6 @@ void CSP_ra_finalize(void)
         return;
 
     if (shm_global_stats_region.win && shm_global_stats_region.win != MPI_WIN_NULL) {
-        PMPI_Win_unlock(CSP_RA_GSYNC_GHOST_LOCAL_RANK, shm_global_stats_region.win);
         PMPI_Win_free(&shm_global_stats_region.win);
     }
 
@@ -174,12 +183,6 @@ int CSP_ra_init(void)
 
     mpi_errno = PMPI_Win_allocate_shared(0, 1, MPI_INFO_NULL, CSP_COMM_LOCAL,
                                          &local_base, &shm_global_stats_region.win);
-    if (mpi_errno != MPI_SUCCESS)
-        goto fn_fail;
-
-    /* do not need exclusive access, only for later load/store. */
-    mpi_errno = PMPI_Win_lock(MPI_LOCK_SHARED, CSP_RA_GSYNC_GHOST_LOCAL_RANK,
-                              MPI_MODE_NOCHECK, shm_global_stats_region.win);
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
