@@ -206,6 +206,7 @@ int CSP_win_gsync_update(CSP_win * ug_win)
     int i, user_nprocs = 0, local_user_rank = 0;
     int *ranks_in_world = NULL;
     CSP_async_stat *async_stats = NULL;
+    CSP_gsync_update_flag flag = CSP_GSYNC_UPDATE_LOCAL;
 
     if (CSP_ENV.async_sched_level < CSP_ASYNC_SCHED_ANYTIME)
         goto fn_exit;
@@ -222,8 +223,10 @@ int CSP_win_gsync_update(CSP_win * ug_win)
     }
 
     /* all processes update local cache, only root updates ghost cache. */
-    mpi_errno = CSP_ra_gsync_update(user_nprocs, ranks_in_world, async_stats,
-                                    local_user_rank == 0 /*remote flag */);
+    if (local_user_rank == 0)
+        flag = CSP_GSYNC_UPDATE_GHOST_SYNCED;
+
+    mpi_errno = CSP_ra_gsync_update(user_nprocs, ranks_in_world, async_stats, flag);
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 

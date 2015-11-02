@@ -168,6 +168,13 @@ typedef struct {
 } CSP_local_shm_region;
 
 typedef enum {
+    CSP_GSYNC_UPDATE_LOCAL,     /* only update local cache. */
+    CSP_GSYNC_UPDATE_GHOST_SYNCED,      /* synchronously update ghost cache (i.e., in win-collective calls).
+                                         * thus can skip global synchronization. */
+    CSP_GSYNC_UPDATE_GHOST      /* update ghost cache */
+} CSP_gsync_update_flag;
+
+typedef enum {
     CSP_LOAD_OPT_STATIC,
     CSP_LOAD_OPT_RANDOM,
     CSP_LOAD_OPT_COUNTING,
@@ -248,6 +255,7 @@ typedef struct CSP_env_param {
     double async_sched_min_int; /* minimal interval during two scheduling (in seconds). */
     long long async_timed_gsync_int;    /* the interval between two timed
                                          * local scheduling (in seconds) */
+    /* TODO: check updated rate in gsync */
     CSP_async_stat async_auto_stat;     /* default state for auto config. */
 #endif
 } CSP_env_param;
@@ -982,13 +990,29 @@ extern CSP_async_stat CSP_ra_get_async_stat(void);
  * Global asynchronous synchronization routines
  * -------------------------------------------- */
 #define CSP_RUNTIME_ASYNC_TIMED_GSYNC_DEFAULT_INT (180) /* in seconds, 3 mins */
-extern double ra_gsync_interavl_sta;
+#define CSP_RA_LNOTIFY_RESET_TAG 10991
+
+typedef enum {
+    CSP_RA_LNOTIFY_NONE,
+    CSP_RA_LNOTIFY_DIRTY,
+    CSP_RA_LNOTIFY_RESET,
+    CSP_RA_LNOTIFY_END
+} CSP_ra_lnotify_type;
+
+typedef struct CSP_ra_dirty_lnotify_pk {
+    CSP_ra_lnotify_type type;
+} CSP_ra_dirty_lnotify_pkt_t;
+
+typedef struct CSP_ra_reset_lnotify_pkt {
+    CSP_ra_lnotify_type type;
+} CSP_ra_reset_lnotify_pkt_t;
+
 extern CSP_async_stat *ra_gsync_local_cache;
 
 extern int CSP_ra_init(void);
 extern void CSP_ra_finalize(void);
-extern int CSP_ra_gsync_update(int count, int *user_world_ranks,
-                               CSP_async_stat * stats, int remote_flag);
+extern int CSP_ra_gsync_update(int count, int *user_world_ranks, CSP_async_stat * stats,
+                               CSP_gsync_update_flag flag);
 extern int CSP_ra_gsync_refresh(void);
 
 static inline int CSP_ra_gsync_get_stat(int user_rank)
@@ -996,39 +1020,19 @@ static inline int CSP_ra_gsync_get_stat(int user_rank)
     return ra_gsync_local_cache[user_rank];
 }
 
-static inline int CSP_ra_timed_gsync(void)
+static inline int CSP_ra_gsync(void)
 {
     int mpi_errno = MPI_SUCCESS;
-    CSP_async_stat old_local_stat, new_local_stat;
-    double now = 0.0;
 
     if (CSP_ENV.async_sched_level < CSP_ASYNC_SCHED_ANYTIME)
         return mpi_errno;
 
-    now = PMPI_Wtime();
-
-    /* only synchronize if interval is large enough. */
-    if ((now - ra_gsync_interavl_sta - CSP_ENV.async_timed_gsync_int) < 0)
-        return mpi_errno;
-
     /* update local asynchronous status */
-    old_local_stat = CSP_ra_get_async_stat();
-    new_local_stat = CSP_ra_sched_async_stat_impl();
-
-    /* update gsync caches if my status is changed */
-    if (old_local_stat != new_local_stat) {
-        int user_rank = 0;
-
-        PMPI_Comm_rank(CSP_COMM_USER_WORLD, &user_rank);
-        mpi_errno = CSP_ra_gsync_update(1, &user_rank, &new_local_stat, 1 /* remote update */);
-        if (mpi_errno != MPI_SUCCESS)
-            return mpi_errno;
-    }
+    CSP_ra_sched_async_stat_impl();
 
     /* refresh local gsync cache */
     mpi_errno = CSP_ra_gsync_refresh();
 
-    ra_gsync_interavl_sta = now;
     return mpi_errno;
 }
 
@@ -1039,12 +1043,12 @@ static inline int CSP_ra_timed_gsync(void)
 #else
 #define CSP_ra_sched_async_stat() {/*do nothing */}
 #define CSP_ra_get_async_stat() {/*do nothing */}
-#define CSP_ra_timed_gsync() {/*do nothing*/}
+#define CSP_ra_gsync() {/*do nothing*/}
 #endif /* end of CSP_ENABLE_RUNTIME_ASYNC_SCHED */
 
 #define CSP_MPI_FUNC_START_ROUTINE() do {                 \
         CSP_rm_count_start(CSP_RM_COMM_FREQ);             \
-        CSP_ra_timed_gsync();                             \
+        CSP_ra_gsync();                                   \
         } while (0)
 #define CSP_MPI_FUNC_END_ROUTINE() do {                   \
         CSP_rm_count_end(CSP_RM_COMM_FREQ);               \

@@ -17,8 +17,6 @@
  * cache at set interval.*/
 CSP_async_stat *ra_gsync_local_cache = NULL;
 
-double ra_gsync_interavl_sta = 0;
-
 /* Level-2 cache for temporary asynchronous status of all user processes in the
  * world, using memory allocated on ghost process.
  * Note that it should only be accessed via RMA operations from the user side
@@ -26,15 +24,134 @@ double ra_gsync_interavl_sta = 0;
  * synchronization between level-1 and level-2 caches only happens at set interval. */
 static CSP_local_shm_region shm_global_stats_region;
 
+/* communicator consisting all local user processes and the root ghost process */
+static MPI_Comm CSP_RA_GNTF_COMM = MPI_COMM_NULL;
+static int RA_LNTF_GHOST_RANK = 0;
+
+/* parameters for local reset notification */
+static CSP_ra_reset_lnotify_pkt_t reset_pkt = { CSP_RA_LNOTIFY_NONE };
+
+static MPI_Request reset_req = MPI_REQUEST_NULL;
+static int issued_reset_cnt = 0;
+
+/* parameters for local dirty notification */
+static CSP_ra_dirty_lnotify_pkt_t dirty_pkt = { CSP_RA_LNOTIFY_NONE };
+
+static MPI_Request dirty_req = MPI_REQUEST_NULL;
+static int recvd_dirty_cnt = 0;
+static int local_dirty_flag = 0;
+static int dirty_notify_end_flag = 0;
+
+static inline int ra_lnotify_progress(void)
+{
+    int mpi_errno = MPI_SUCCESS;
+
+    if (dirty_req != MPI_REQUEST_NULL) {
+        int flag = 0;
+
+        mpi_errno = PMPI_Test(&dirty_req, &flag, MPI_STATUS_IGNORE);
+        if (mpi_errno != MPI_SUCCESS)
+            return mpi_errno;
+
+        if (flag) {
+            recvd_dirty_cnt++;
+
+            if (dirty_pkt.type == CSP_RA_LNOTIFY_DIRTY)
+                local_dirty_flag = 1;
+
+            if (dirty_pkt.type == CSP_RA_LNOTIFY_END)
+                dirty_notify_end_flag = 1;
+
+            CSP_ADAPT_DBG_PRINT(">>> ra_lnotify_progress: recv from ghost %s%s, recvd=%d\n",
+                                (dirty_pkt.type == CSP_RA_LNOTIFY_DIRTY ? "(dirty)" : ""),
+                                (dirty_pkt.type == CSP_RA_LNOTIFY_END ? "(end)" : ""),
+                                recvd_dirty_cnt);
+        }
+    }
+
+    /* reissue broadcast for next dirty notification */
+    if (dirty_req == MPI_REQUEST_NULL && !dirty_notify_end_flag) {
+        dirty_pkt.type = CSP_RA_LNOTIFY_NONE;
+        mpi_errno = PMPI_Ibcast(&dirty_pkt, sizeof(CSP_ra_dirty_lnotify_pkt_t),
+                                MPI_CHAR, RA_LNTF_GHOST_RANK, CSP_RA_GNTF_COMM, &dirty_req);
+    }
+
+    return mpi_errno;
+}
+
+static inline int ra_lnotify_issue_reset(void)
+{
+    int mpi_errno = MPI_SUCCESS;
+    int flag = 0;
+
+    mpi_errno = PMPI_Test(&reset_req, &flag, MPI_STATUS_IGNORE);
+    if (mpi_errno != MPI_SUCCESS)
+        return mpi_errno;
+
+    /* skip notify if an outstanding one exists */
+    if (flag) {
+        reset_pkt.type = CSP_RA_LNOTIFY_RESET;
+        mpi_errno = PMPI_Isend(&reset_pkt, sizeof(CSP_ra_reset_lnotify_pkt_t),
+                               MPI_CHAR, RA_LNTF_GHOST_RANK, CSP_RA_LNOTIFY_RESET_TAG,
+                               CSP_RA_GNTF_COMM, &reset_req);
+        issued_reset_cnt++;
+        CSP_ADAPT_DBG_PRINT(">>> ra_lnotify_issue_reset: issued_reset_cnt=%d\n", issued_reset_cnt);
+    }
+    else {
+        CSP_ADAPT_DBG_PRINT(">>> ra_lnotify_issue_reset (skipped)\n");
+    }
+
+    return MPI_SUCCESS;
+}
+
+static int ra_lnotify_complete(void)
+{
+    int mpi_errno = MPI_SUCCESS;
+
+    /* finish reset notify */
+    mpi_errno = PMPI_Wait(&reset_req, MPI_STATUS_IGNORE);
+    if (mpi_errno != MPI_SUCCESS)
+        return mpi_errno;
+    CSP_ADAPT_DBG_PRINT(">>> >> ra_lnotify_complete: wait previous reset\n");
+
+    reset_pkt.type = CSP_RA_LNOTIFY_END;
+    mpi_errno = PMPI_Send(&reset_pkt, sizeof(CSP_ra_reset_lnotify_pkt_t),
+                          MPI_CHAR, RA_LNTF_GHOST_RANK, CSP_RA_LNOTIFY_RESET_TAG, CSP_RA_GNTF_COMM);
+    if (mpi_errno != MPI_SUCCESS)
+        return mpi_errno;
+    CSP_ADAPT_DBG_PRINT(">>> >> ra_lnotify_complete: reset done\n");
+
+    /* finish dirty notify */
+    while (!dirty_notify_end_flag) {
+        mpi_errno = ra_lnotify_progress();
+        if (mpi_errno != MPI_SUCCESS)
+            return mpi_errno;
+    }
+    CSP_ADAPT_DBG_PRINT(">>> >> ra_lnotify_complete: dirty done\n");
+
+    CSP_ADAPT_DBG_PRINT(">>> ra_lnotify_complete: done\n");
+    return mpi_errno;
+}
+
+static inline int ra_lnotify_init(void)
+{
+    int mpi_errno = MPI_SUCCESS;
+    mpi_errno = PMPI_Ibcast(&dirty_pkt, sizeof(CSP_ra_dirty_lnotify_pkt_t), MPI_CHAR,
+                            RA_LNTF_GHOST_RANK, CSP_RA_GNTF_COMM, &dirty_req);
+    return mpi_errno;
+}
 
 /* Update asynchronous status in local cache and in the global synchronization cache
  * on ghost process (blocking call). It is called when local state is updated, or
  * receive other processes' state in win-collective calls.
- * The caller can set remote_flag to enable or disable remote update to the cache on
- * ghost process. Usually when local state is updated at set interval, the remote
- * update is always required; when updating mutiple states, only the local root
- * process needs to update ghost cache. */
-int CSP_ra_gsync_update(int count, int *user_world_ranks, CSP_async_stat * stats, int remote_flag)
+ * The caller can set flag to enable or disable update to the ghost cache, and to
+ * control the global synchronization on ghost processes.
+ * Usually when local state is updated at set interval, the remote update and global
+ * synchronization is always required; when updating local states after user-level
+ * remote exchange (i.e., in win-coll calls), only the local root process needs to
+ * update ghost cache, and global synchronization should be skipped. */
+int CSP_ra_gsync_update(int count, int *user_world_ranks, CSP_async_stat * stats,
+                        CSP_gsync_update_flag flag)
 {
     int mpi_errno = MPI_SUCCESS;
     int i = 0, rank = 0;
@@ -49,7 +166,8 @@ int CSP_ra_gsync_update(int count, int *user_world_ranks, CSP_async_stat * stats
         ra_gsync_local_cache[rank] = stats[i];
     }
 
-    if (remote_flag == 1) {
+    /* update ghost cache */
+    if (flag > CSP_GSYNC_UPDATE_LOCAL) {
         mpi_errno = PMPI_Win_lock(MPI_LOCK_EXCLUSIVE, CSP_RA_GSYNC_GHOST_LOCAL_RANK,
                                   0, shm_global_stats_region.win);
         if (mpi_errno != MPI_SUCCESS)
@@ -70,6 +188,14 @@ int CSP_ra_gsync_update(int count, int *user_world_ranks, CSP_async_stat * stats
         mpi_errno = PMPI_Win_unlock(CSP_RA_GSYNC_GHOST_LOCAL_RANK, shm_global_stats_region.win);
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
+
+        CSP_ADAPT_DBG_PRINT(">>> ra_gsync_update count=%d (remote)\n", count);
+
+        if (flag == CSP_GSYNC_UPDATE_GHOST_SYNCED) {
+            mpi_errno = ra_lnotify_issue_reset();
+            if (mpi_errno != MPI_SUCCESS)
+                goto fn_fail;
+        }
     }
 
   fn_exit:
@@ -87,6 +213,14 @@ int CSP_ra_gsync_refresh(void)
     int user_nprocs = 0, user_rank = 0;
 
     if (CSP_ENV.async_sched_level < CSP_ASYNC_SCHED_ANYTIME)
+        goto fn_exit;
+
+    mpi_errno = ra_lnotify_progress();
+    if (mpi_errno != MPI_SUCCESS)
+        goto fn_fail;
+
+    /* check if ghost cache is dirty, if not return immediately. */
+    if (local_dirty_flag == 0)
         goto fn_exit;
 
     PMPI_Comm_size(CSP_COMM_USER_WORLD, &user_nprocs);
@@ -108,6 +242,7 @@ int CSP_ra_gsync_refresh(void)
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
+    local_dirty_flag = 0;
 
     CSP_ADAPT_DBG_PRINT(">>> ra_gsync_refresh: done\n");
 
@@ -135,6 +270,12 @@ void CSP_ra_finalize(void)
     if (CSP_ENV.async_sched_level < CSP_ASYNC_SCHED_ANYTIME)
         return;
 
+    ra_lnotify_complete();
+
+    if (CSP_RA_GNTF_COMM && CSP_RA_GNTF_COMM != MPI_COMM_NULL) {
+        PMPI_Comm_free(&CSP_RA_GNTF_COMM);
+        CSP_RA_GNTF_COMM = MPI_COMM_NULL;
+    }
     if (shm_global_stats_region.win && shm_global_stats_region.win != MPI_WIN_NULL) {
         PMPI_Win_free(&shm_global_stats_region.win);
     }
@@ -149,6 +290,57 @@ void CSP_ra_finalize(void)
     }
 }
 
+static int ra_comm_init(void)
+{
+    int mpi_errno = MPI_SUCCESS;
+    MPI_Comm tmp_gsync_comm = MPI_COMM_NULL;
+    MPI_Group local_ug_group = MPI_GROUP_NULL;
+    int *excl_ranks = NULL, i, idx = 0;
+    int ra_local_ghost_rank = CSP_RA_GSYNC_GHOST_LOCAL_RANK;
+    int ra_lntf_rank = 0, ra_lntf_nprocs = 0;
+
+    /* help ghost create gsync communicator */
+    mpi_errno = PMPI_Comm_split(MPI_COMM_WORLD, 0, 1, &tmp_gsync_comm);
+    if (mpi_errno != MPI_SUCCESS)
+        goto fn_fail;
+
+    /* create user-root ghost communicator */
+    excl_ranks = CSP_calloc(CSP_ENV.num_g, sizeof(int));        /* at least 1 */
+    for (idx = 0, i = 0; i < CSP_ENV.num_g; i++) {
+        if (i == CSP_RA_GSYNC_GHOST_LOCAL_RANK)
+            continue;
+        excl_ranks[idx++] = i;
+    }
+    mpi_errno = PMPI_Group_excl(CSP_GROUP_LOCAL, CSP_ENV.num_g - 1, excl_ranks, &local_ug_group);
+    if (mpi_errno != MPI_SUCCESS)
+        goto fn_fail;
+
+    mpi_errno = PMPI_Comm_create_group(CSP_COMM_LOCAL, local_ug_group, 0, &CSP_RA_GNTF_COMM);
+    if (mpi_errno != MPI_SUCCESS)
+        goto fn_fail;
+
+    mpi_errno = PMPI_Group_translate_ranks(CSP_GROUP_LOCAL, 1, &ra_local_ghost_rank,
+                                           local_ug_group, &RA_LNTF_GHOST_RANK);
+    if (mpi_errno != MPI_SUCCESS)
+        goto fn_fail;
+
+    PMPI_Comm_rank(CSP_RA_GNTF_COMM, &ra_lntf_rank);
+    PMPI_Comm_size(CSP_RA_GNTF_COMM, &ra_lntf_nprocs);
+    CSP_ADAPT_DBG_PRINT(" ra_init: create ra_lntf_comm, I am %d/%d, ghost %d\n", ra_lntf_rank,
+                        ra_lntf_nprocs, RA_LNTF_GHOST_RANK);
+  fn_exit:
+    if (excl_ranks)
+        free(excl_ranks);
+    if (local_ug_group != MPI_GROUP_NULL)
+        PMPI_Group_free(&local_ug_group);
+    if (tmp_gsync_comm != MPI_COMM_NULL)
+        PMPI_Comm_free(&tmp_gsync_comm);
+    return mpi_errno;
+
+  fn_fail:
+    goto fn_exit;
+}
+
 int CSP_ra_init(void)
 {
     int mpi_errno = MPI_SUCCESS;
@@ -156,7 +348,6 @@ int CSP_ra_init(void)
     void *local_base = NULL;
     int user_rank = 0, user_nprocs;
     int r_disp_unit = 0, i;
-    MPI_Comm tmp_gsync_comm = MPI_COMM_NULL;
     CSP_async_stat init_async_stat = CSP_ASYNC_NONE;
 
     /* initialize local state */
@@ -168,8 +359,7 @@ int CSP_ra_init(void)
     PMPI_Comm_rank(CSP_COMM_USER_WORLD, &user_rank);
     PMPI_Comm_size(CSP_COMM_USER_WORLD, &user_nprocs);
 
-    /* help ghost create gsync communicator */
-    mpi_errno = PMPI_Comm_split(MPI_COMM_WORLD, 0, 1, &tmp_gsync_comm);
+    mpi_errno = ra_comm_init();
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
@@ -181,13 +371,14 @@ int CSP_ra_init(void)
     shm_global_stats_region.base = NULL;
     shm_global_stats_region.size = region_size;
 
-    mpi_errno = PMPI_Win_allocate_shared(0, 1, MPI_INFO_NULL, CSP_COMM_LOCAL,
+    mpi_errno = PMPI_Win_allocate_shared(0, 1, MPI_INFO_NULL, CSP_RA_GNTF_COMM,
                                          &local_base, &shm_global_stats_region.win);
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
     /* get shared region's local address. */
-    mpi_errno = PMPI_Win_shared_query(shm_global_stats_region.win, CSP_RA_GSYNC_GHOST_LOCAL_RANK,
+    mpi_errno = PMPI_Win_shared_query(shm_global_stats_region.win,
+                                      RA_LNTF_GHOST_RANK,
                                       &r_size, &r_disp_unit, &shm_global_stats_region.base);
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
@@ -198,7 +389,7 @@ int CSP_ra_init(void)
                         shm_global_stats_region.base, ra_gsync_local_cache, region_size);
 
     /* send my user rank to the gsync ghost */
-    mpi_errno = PMPI_Send(&user_rank, 1, MPI_INT, CSP_RA_GSYNC_GHOST_LOCAL_RANK, 0, CSP_COMM_LOCAL);
+    mpi_errno = PMPI_Send(&user_rank, 1, MPI_INT, RA_LNTF_GHOST_RANK, 0, CSP_RA_GNTF_COMM);
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
@@ -207,11 +398,11 @@ int CSP_ra_init(void)
     for (i = 0; i < user_nprocs; i++)
         ra_gsync_local_cache[i] = init_async_stat;
 
-    ra_gsync_interavl_sta = MPI_Wtime();
+    mpi_errno = ra_lnotify_init();
+    if (mpi_errno != MPI_SUCCESS)
+        goto fn_fail;
 
   fn_exit:
-    if (tmp_gsync_comm != MPI_COMM_NULL)
-        PMPI_Comm_free(&tmp_gsync_comm);
     return mpi_errno;
 
   fn_fail:

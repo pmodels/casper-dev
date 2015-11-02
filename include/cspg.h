@@ -21,7 +21,7 @@
 #define CSPG_DBG_PRINT(str, ...) {}
 #endif
 
-#if defined(CSPG_ADAPT_DEBUG) || defined(CSPG_ADAPT_DEBUG)
+#if defined(CSPG_DEBUG) || defined(CSPG_ADAPT_DEBUG)
 #define CSPG_ADAPT_DBG_PRINT(str, ...) do { \
     fprintf(stdout, "[CSPG][N-%d]"str, CSP_MY_NODE_ID, ## __VA_ARGS__); fflush(stdout); \
     } while (0)

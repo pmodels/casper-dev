@@ -45,7 +45,7 @@ CSP_async_stat CSP_ra_sched_async_stat_impl(void)
 {
     double interval;
     int freq = 0;
-    CSP_async_stat old_stat CSP_ATTRIBUTE((unused)) = CSP_MY_ASYNC_STAT;
+    CSP_async_stat old_stat = CSP_MY_ASYNC_STAT;
     char old_stat_name[16] CSP_ATTRIBUTE((unused));
 
     /* schedule async config by using dynamic frequency */
@@ -73,6 +73,13 @@ CSP_async_stat CSP_ra_sched_async_stat_impl(void)
     CSP_RM[CSP_RM_COMM_FREQ].last_time = CSP_RM[CSP_RM_COMM_FREQ].time;
     CSP_RM[CSP_RM_COMM_FREQ].last_interval = interval;
     CSP_RM[CSP_RM_COMM_FREQ].last_freq = freq;
+
+    /* update ghost caches if my status is changed */
+    if (CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_ANYTIME && old_stat != CSP_MY_ASYNC_STAT) {
+        int user_rank = 0;
+        PMPI_Comm_rank(CSP_COMM_USER_WORLD, &user_rank);
+        CSP_ra_gsync_update(1, &user_rank, &CSP_MY_ASYNC_STAT, CSP_GSYNC_UPDATE_GHOST);
+    }
 
     CSP_rm_reset(CSP_RM_COMM_FREQ);
 
