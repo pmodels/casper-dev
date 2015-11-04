@@ -72,11 +72,11 @@ int MPI_Win_set_info(MPI_Win win, MPI_Info info)
          * triggered in win_set_info. */
         if ((async_config_phases == CSP_ASYNC_CONFIG_PHASE_LOCAL_UPDATE) &&
             ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
-            CSP_ra_sched_async_stat();
+            CSP_adpt_sched_async_stat();
 
             if (CSP_ENV.verbose >= 2 && user_rank == 0)
                 CSP_INFO_PRINT(2, "[local-update] my async_stat %s, freq=%d (%.4f/%.4f)\n",
-                               CSP_get_target_async_stat_name(CSP_ra_get_async_stat()),
+                               CSP_get_target_async_stat_name(CSP_adpt_get_async_stat()),
                                CSP_RM[CSP_RM_COMM_FREQ].last_freq,
                                CSP_RM[CSP_RM_COMM_FREQ].last_time,
                                CSP_RM[CSP_RM_COMM_FREQ].last_interval);

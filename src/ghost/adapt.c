@@ -11,50 +11,56 @@
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
 
-/* This file defines the routines for global synchronization of asynchronous
- * status on ghost process side.
- *
- * The ghost processes and the local user processes share a memory region,
- * and use it to store the asynchronous status of all user processes in the world.
- * The synchronization can be summarized in following steps:
- *
- * - The local user process updates its status on the shared region at set intervals.
- * - Every node has a single ghost process, called gsync ghos, handling the background
- *   global synchronization, it frequently checks local updates and then broadcasts any
- *   change to other remote gsync ghost.
- * - Once a gsync ghost process received a message, it updates its local region
- *   according to the received packet.
- * - The local user process could check the latest status of other user processes
- *   via the shared region, and then decide the target process for RMA operations.
- *
- * Note that it should only effect the PUT/GET operations on local user processes.
- * ACC-like operations should only use the status synchronized through collective
- * scheduling routine on user processes. This is because it requires ordering
- * and atomicity, which means two operations, which are issued from the same origin
- * or from two different origin processes but to the same target, must be always
- * redirected to the same process (either user process or ghost process) before
- * their remote completion. */
 
-static CSP_local_shm_region shm_global_stats_region;    /* asynchronous status of all user processes.
+/* =================================================================
+ * Ghost-offload Asynchronous Synchronization Routines (Ghost Side)
+ * ================================================================= */
+
+/* The ghost processes and the local user processes share a memory region (level-2
+ * cache), and use it to store the asynchronous status of all user processes in the
+ * world. The synchronization can be summarized in following steps:
+ *
+ * - The local user process updates its status on the shared region once its local
+ *   status is changed.
+ * - [GSYNC] Every node has a single ghost process, called gsync ghost, handling the
+ *   background global synchronization, it exchanges all the status with other gsync
+ *   ghosts at set interval (gadpt_gsync_interval).
+ * - [DIRTY] Once a ghost process finished gsync, it updates the shared region and
+ *   notifies all local users that the level-2 cache has been updated (dirty).
+ * - When the user processes received the dirty notify, they will refresh all status
+ *   from the shared region to its local cache.
+ * - [RESET] Local user process can notify ghost to reset the interval timer for GSYNC
+ *   when it has been synchronized globally in win-collective calls.
+ *
+ * Note that the GADPT routine should only effect the PUT/GET operations on local
+ * user processes. ACC-like operations should only use the status synchronized
+ * through win-collective calls. This is because it requires ordering and atomicity,
+ * which means two operations, which are issued from the same origin or from two
+ * different origin processes but to the same target, must be always redirected
+ * to the same process (either user process or ghost process) before their remote
+ * completion. */
+
+static CSP_local_shm_region gadpt_l2_cache_region;      /* asynchronous status of all user processes.
                                                          * one copy per node. */
-static CSP_async_stat *shm_global_stats_ptr = NULL;     /* point to shm region, do not free */
+static CSP_async_stat *shm_global_stats_ptr = NULL;     /* point to shm region, do not free.
+                                                         * states are stored by user world rank. */
 static int num_local_stats = 0, num_all_stats = 0;
 static int symmetric_num_stats = 0;
 
-static MPI_Comm CSPG_RA_LNTF_COMM = MPI_COMM_NULL;      /* all local users and the root ghost process */
-static MPI_Comm CSPG_RA_GSYNC_COMM = MPI_COMM_NULL;     /* all gsync ghost processes. */
-static int RA_LNTF_GHOST_RANK = 0;
+static MPI_Comm GADPT_LNTF_COMM = MPI_COMM_NULL;        /* all local users and the root ghost process */
+static MPI_Comm GADPT_GSYNC_COMM = MPI_COMM_NULL;       /* all gsync ghost processes. */
+static int GADPT_LNTF_GHOST_RANK = 0;
 
-static double ra_gsync_interval_sta = 0.0;
+static double gadpt_gsync_interval_sta = 0.0;
 
 /* parameters for local reset notification */
-static CSP_ra_reset_lnotify_pkt_t reset_pkt = { CSP_RA_LNOTIFY_NONE };
+static CSP_gadpt_reset_lnotify_pkt_t reset_pkt = { CSP_GADPT_LNOTIFY_NONE };
 
 static MPI_Request reset_req = MPI_REQUEST_NULL;
 static int recvd_reset_cnt = 0, done_reset_cnt = 0;
 
 /* parameters for local dirty notification */
-static CSP_ra_dirty_lnotify_pkt_t dirty_pkt = { CSP_RA_LNOTIFY_NONE };
+static CSP_gadpt_dirty_lnotify_pkt_t dirty_pkt = { CSP_GADPT_LNOTIFY_NONE };
 
 static MPI_Request dirty_req = MPI_REQUEST_NULL;
 static int issued_dirty_cnt = 0;
@@ -67,34 +73,34 @@ static int *stats_cnts = NULL, *stats_disps = NULL;     /*in integer */
 static int issued_gsync_cnt = 0;
 
 
-static inline void ra_gsync_reset(void)
+static inline void gadpt_gsync_reset(void)
 {
     double now = 0.0;
 
     now = PMPI_Wtime();
-    CSPG_ADAPT_DBG_PRINT(">>> CSPG_ra_gsync_reset: %.4lf(s)\n", now - ra_gsync_interval_sta);
+    CSPG_ADAPT_DBG_PRINT(">>> CSPG_gadpt_gsync_reset: %.4lf(s)\n", now - gadpt_gsync_interval_sta);
 
-    ra_gsync_interval_sta = now;
+    gadpt_gsync_interval_sta = now;
 }
 
-static inline int ra_gsync_iallgatherv(void)
+static inline int gadpt_gsync_iallgatherv(void)
 {
     int mpi_errno = MPI_SUCCESS;
     if (symmetric_num_stats == 1) {
         mpi_errno = PMPI_Iallgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL,
                                     gsync_user_stats, num_local_stats, MPI_INT,
-                                    CSPG_RA_GSYNC_COMM, &gsync_req);
+                                    GADPT_GSYNC_COMM, &gsync_req);
     }
     else {
         mpi_errno = PMPI_Iallgatherv(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL,
                                      gsync_user_stats, stats_cnts, stats_disps,
-                                     MPI_INT, CSPG_RA_GSYNC_COMM, &gsync_req);
+                                     MPI_INT, GADPT_GSYNC_COMM, &gsync_req);
     }
 
     return mpi_errno;
 }
 
-static inline int ra_lnotify_issue_dirty(void)
+static inline int gadpt_lnotify_issue_dirty(void)
 {
     int mpi_errno = MPI_SUCCESS;
     int flag = 0;
@@ -106,20 +112,21 @@ static inline int ra_lnotify_issue_dirty(void)
 
     /* issue notification to users when previous one is done, otherwise skip. */
     if (flag) {
-        dirty_pkt.type = CSP_RA_LNOTIFY_DIRTY;
-        mpi_errno = PMPI_Ibcast(&dirty_pkt, sizeof(CSP_ra_dirty_lnotify_pkt_t),
-                                MPI_CHAR, RA_LNTF_GHOST_RANK, CSPG_RA_LNTF_COMM, &dirty_req);
+        dirty_pkt.type = CSP_GADPT_LNOTIFY_DIRTY;
+        mpi_errno = PMPI_Ibcast(&dirty_pkt, sizeof(CSP_gadpt_dirty_lnotify_pkt_t),
+                                MPI_CHAR, GADPT_LNTF_GHOST_RANK, GADPT_LNTF_COMM, &dirty_req);
         issued_dirty_cnt++;
-        CSPG_ADAPT_DBG_PRINT(">>> ra_lnotify_issue_dirty, issued_dirty_cnt=%d\n", issued_dirty_cnt);
+        CSPG_ADAPT_DBG_PRINT(">>> gadpt_lnotify_issue_dirty, issued_dirty_cnt=%d\n",
+                             issued_dirty_cnt);
     }
     else {
-        CSPG_ADAPT_DBG_PRINT(">>> ra_lnotify_issue_dirty (skipped)\n");
+        CSPG_ADAPT_DBG_PRINT(">>> gadpt_lnotify_issue_dirty (skipped)\n");
     }
 
     return mpi_errno;
 }
 
-static inline int ra_lnotify_progress(void)
+static inline int gadpt_lnotify_progress(void)
 {
     int mpi_errno = MPI_SUCCESS;
 
@@ -135,37 +142,37 @@ static inline int ra_lnotify_progress(void)
         if (flag) {
             recvd_reset_cnt++;
 
-            if (reset_pkt.type == CSP_RA_LNOTIFY_RESET)
-                ra_gsync_reset();
+            if (reset_pkt.type == CSP_GADPT_LNOTIFY_RESET)
+                gadpt_gsync_reset();
 
-            if (reset_pkt.type == CSP_RA_LNOTIFY_END)
+            if (reset_pkt.type == CSP_GADPT_LNOTIFY_END)
                 done_reset_cnt++;
 
-            CSPG_ADAPT_DBG_PRINT
-                (">>> ra_lnotify_progress: recv from %d, %s%s, recvd=%d, done=%d/%d\n",
-                 stat.MPI_SOURCE, (reset_pkt.type == CSP_RA_LNOTIFY_RESET ? "(reset)" : ""),
-                 (reset_pkt.type == CSP_RA_LNOTIFY_END ? "(end)" : ""), recvd_reset_cnt,
-                 done_reset_cnt, num_local_stats);
+            CSPG_ADAPT_DBG_PRINT(">>> gadpt_lnotify_progress: recv from %d, %s%s, recvd=%d,"
+                                 "done=%d/%d\n", stat.MPI_SOURCE,
+                                 (reset_pkt.type == CSP_GADPT_LNOTIFY_RESET ? "(reset)" : ""),
+                                 (reset_pkt.type == CSP_GADPT_LNOTIFY_END ? "(end)" : ""),
+                                 recvd_reset_cnt, done_reset_cnt, num_local_stats);
         }
     }
 
     /* always need post a receive till all users are done. */
     if (reset_req == MPI_REQUEST_NULL && done_reset_cnt < num_local_stats) {
-        mpi_errno = PMPI_Irecv(&reset_pkt, sizeof(CSP_ra_reset_lnotify_pkt_t), MPI_CHAR,
-                               MPI_ANY_SOURCE, CSP_RA_LNOTIFY_RESET_TAG, CSPG_RA_LNTF_COMM,
+        mpi_errno = PMPI_Irecv(&reset_pkt, sizeof(CSP_gadpt_reset_lnotify_pkt_t), MPI_CHAR,
+                               MPI_ANY_SOURCE, CSP_GADPT_LNOTIFY_RESET_TAG, GADPT_LNTF_COMM,
                                &reset_req);
     }
 
     return mpi_errno;
 }
 
-static int ra_lnotify_complete(void)
+static int gadpt_lnotify_complete(void)
 {
     int mpi_errno = MPI_SUCCESS;
 
     /* finish reset notify */
     while (done_reset_cnt < num_local_stats) {
-        mpi_errno = ra_lnotify_progress();
+        mpi_errno = gadpt_lnotify_progress();
         if (mpi_errno != MPI_SUCCESS)
             return mpi_errno;
     }
@@ -174,67 +181,69 @@ static int ra_lnotify_complete(void)
     mpi_errno = PMPI_Wait(&dirty_req, MPI_STATUS_IGNORE);
     if (mpi_errno != MPI_SUCCESS)
         return mpi_errno;
-    CSPG_ADAPT_DBG_PRINT(">>> ra_lnotify_complete: previous ibcast done\n");
+    CSPG_ADAPT_DBG_PRINT(">>> gadpt_lnotify_complete: previous ibcast done\n");
 
     /* send last broadcast for dirty flag */
-    dirty_pkt.type = CSP_RA_LNOTIFY_END;
-    mpi_errno = PMPI_Ibcast(&dirty_pkt, sizeof(CSP_ra_dirty_lnotify_pkt_t),
-                            MPI_CHAR, RA_LNTF_GHOST_RANK, CSPG_RA_LNTF_COMM, &dirty_req);
-    CSPG_ADAPT_DBG_PRINT(">>> ra_lnotify_complete: issue last ibcast\n");
+    dirty_pkt.type = CSP_GADPT_LNOTIFY_END;
+    mpi_errno = PMPI_Ibcast(&dirty_pkt, sizeof(CSP_gadpt_dirty_lnotify_pkt_t),
+                            MPI_CHAR, GADPT_LNTF_GHOST_RANK, GADPT_LNTF_COMM, &dirty_req);
+    CSPG_ADAPT_DBG_PRINT(">>> gadpt_lnotify_complete: issue last ibcast\n");
 
     mpi_errno = PMPI_Wait(&dirty_req, MPI_STATUS_IGNORE);
-    CSPG_ADAPT_DBG_PRINT(">>> ra_lnotify_complete: done\n");
+    CSPG_ADAPT_DBG_PRINT(">>> gadpt_lnotify_complete: done\n");
 
     return mpi_errno;
 }
 
-static inline int ra_lnotify_init(void)
+static inline int gadpt_lnotify_init(void)
 {
     int mpi_errno = MPI_SUCCESS;
-    mpi_errno = PMPI_Irecv(&reset_pkt, sizeof(CSP_ra_reset_lnotify_pkt_t), MPI_CHAR,
-                           MPI_ANY_SOURCE, CSP_RA_LNOTIFY_RESET_TAG, CSPG_RA_LNTF_COMM, &reset_req);
+    mpi_errno = PMPI_Irecv(&reset_pkt, sizeof(CSP_gadpt_reset_lnotify_pkt_t), MPI_CHAR,
+                           MPI_ANY_SOURCE, CSP_GADPT_LNOTIFY_RESET_TAG, GADPT_LNTF_COMM,
+                           &reset_req);
     return mpi_errno;
 }
 
-static inline int ra_gsync_ready(void)
+static inline int gadpt_gsync_ready(void)
 {
     return (gsync_req == MPI_REQUEST_NULL);
 }
 
 /* Issue global synchronization among ghost roots. */
-static int ra_gsync_issue(void)
+static int gadpt_gsync_issue(void)
 {
     int mpi_errno = MPI_SUCCESS;
     int my_stats_disp = 0;
     int i, gsync_rank = 0, gsync_nprocs = 0;
 
-    PMPI_Comm_rank(CSPG_RA_GSYNC_COMM, &gsync_rank);
-    PMPI_Comm_size(CSPG_RA_GSYNC_COMM, &gsync_nprocs);
+    PMPI_Comm_rank(GADPT_GSYNC_COMM, &gsync_rank);
+    PMPI_Comm_size(GADPT_GSYNC_COMM, &gsync_nprocs);
     my_stats_disp = stats_disps[gsync_rank];
 
     memset(gsync_user_stats, 0, num_all_stats * sizeof(int));
 
-    /* read state */
-    mpi_errno = PMPI_Win_lock(MPI_LOCK_SHARED, RA_LNTF_GHOST_RANK, 0, shm_global_stats_region.win);
-    if (mpi_errno != MPI_SUCCESS)
-        goto fn_fail;
+    mpi_errno = PMPI_Win_lock(MPI_LOCK_SHARED, GADPT_LNTF_GHOST_RANK,
+                              0, gadpt_l2_cache_region.win);
 
+    /* read state.
+     * Note that we store states by rank in cache (rank can be non-contiguous in odd_even),
+     * but in exchange buffer, we put the states by node. */
     for (i = 0; i < num_local_stats; i++) {
         int user_rank = gsync_user_ranks[my_stats_disp + i];
         gsync_user_stats[my_stats_disp + i] = shm_global_stats_ptr[user_rank];
     }
 
-    mpi_errno = PMPI_Win_unlock(RA_LNTF_GHOST_RANK, shm_global_stats_region.win);
+    mpi_errno = PMPI_Win_unlock(GADPT_LNTF_GHOST_RANK, gadpt_l2_cache_region.win);
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
     /* exchange */
-    mpi_errno = ra_gsync_iallgatherv();
+    mpi_errno = gadpt_gsync_iallgatherv();
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
     issued_gsync_cnt++;
-    CSPG_ADAPT_DBG_PRINT(">>> ra_gsyc_issue, issued_gsync_cnt=%d\n", issued_gsync_cnt);
+    CSPG_ADAPT_DBG_PRINT(">>> gadpt_gsyc_issue, issued_gsync_cnt=%d\n", issued_gsync_cnt);
 
   fn_exit:
     return mpi_errno;
@@ -243,14 +252,14 @@ static int ra_gsync_issue(void)
 }
 
 /* Make progress on the current outstanding global synchronization.*/
-static int ra_gsync_progress(void)
+static int gadpt_gsync_progress(void)
 {
     int mpi_errno = MPI_SUCCESS;
     int test_flag = 0;
     int i, gsync_rank = 0, gsync_nprocs = 0;
 
-    PMPI_Comm_rank(CSPG_RA_GSYNC_COMM, &gsync_rank);
-    PMPI_Comm_size(CSPG_RA_GSYNC_COMM, &gsync_nprocs);
+    PMPI_Comm_rank(GADPT_GSYNC_COMM, &gsync_rank);
+    PMPI_Comm_size(GADPT_GSYNC_COMM, &gsync_nprocs);
 
     if (gsync_req != MPI_REQUEST_NULL) {
         mpi_errno = PMPI_Test(&gsync_req, &test_flag, MPI_STATUS_IGNORE);
@@ -258,21 +267,23 @@ static int ra_gsync_progress(void)
             return mpi_errno;
 
         if (test_flag) {
-            /* write cache of local status */
-            mpi_errno = PMPI_Win_lock(MPI_LOCK_EXCLUSIVE, CSP_RA_GSYNC_GHOST_LOCAL_RANK,
-                                      0, shm_global_stats_region.win);
+            mpi_errno = PMPI_Win_lock(MPI_LOCK_EXCLUSIVE, GADPT_LNTF_GHOST_RANK,
+                                      0, gadpt_l2_cache_region.win);
             if (mpi_errno != MPI_SUCCESS)
                 goto fn_fail;
 
-            for (i = 0; i < gsync_nprocs; i++) {
+            /* write cache of local status
+             * Note that we store states by rank in cache (rank can be non-contiguous in odd_even),
+             * but in exchange buffer, we put the states by node. */
+            for (i = 0; i < gsync_nprocs; i++) {        /*per node */
                 int disp = stats_disps[i], j;
-                for (j = 0; j < stats_cnts[i]; j++) {
+                for (j = 0; j < stats_cnts[i]; j++) {   /*state on node i */
                     int user_rank = gsync_user_ranks[disp + j];
                     shm_global_stats_ptr[user_rank] = gsync_user_stats[disp + j];
                 }
             }
 
-            mpi_errno = PMPI_Win_unlock(CSP_RA_GSYNC_GHOST_LOCAL_RANK, shm_global_stats_region.win);
+            mpi_errno = PMPI_Win_unlock(GADPT_LNTF_GHOST_RANK, gadpt_l2_cache_region.win);
             if (mpi_errno != MPI_SUCCESS)
                 goto fn_fail;
 
@@ -287,12 +298,12 @@ static int ra_gsync_progress(void)
                         async_off_cnt++;
                     }
                 }
-                CSPG_ADAPT_DBG_PRINT(">>> ra_gsyc_progress: allgather done, on %d; off %d\n",
+                CSPG_ADAPT_DBG_PRINT(">>> gadpt_gsycn_progress: allgather done, on %d; off %d\n",
                                      async_on_cnt, async_off_cnt);
             }
 #endif
 
-            mpi_errno = ra_lnotify_issue_dirty();
+            mpi_errno = gadpt_lnotify_issue_dirty();
             if (mpi_errno != MPI_SUCCESS)
                 goto fn_fail;
         }
@@ -304,21 +315,21 @@ static int ra_gsync_progress(void)
     goto fn_exit;
 }
 
-static int ra_gsync_complete(void)
+static int gadpt_gsync_complete(void)
 {
     int mpi_errno = MPI_SUCCESS;
     int gsync_nprocs = 0, gsync_rank = 0;
     int max_issued_gsync_cnt = 0;
 
-    PMPI_Comm_size(CSPG_RA_GSYNC_COMM, &gsync_nprocs);
-    PMPI_Comm_rank(CSPG_RA_GSYNC_COMM, &gsync_rank);
+    PMPI_Comm_size(GADPT_GSYNC_COMM, &gsync_nprocs);
+    PMPI_Comm_rank(GADPT_GSYNC_COMM, &gsync_rank);
 
     /* ensure all ghosts are arrived and gather gsync count */
     mpi_errno = PMPI_Allreduce(&issued_gsync_cnt, &max_issued_gsync_cnt, 1,
-                               MPI_INT, MPI_MAX, CSPG_RA_GSYNC_COMM);
+                               MPI_INT, MPI_MAX, GADPT_GSYNC_COMM);
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
-    CSPG_ADAPT_DBG_PRINT(">>> >> ra_gsync_complete: issued_gsync_cnt %d, max %d\n",
+    CSPG_ADAPT_DBG_PRINT(">>> >> gadpt_gsync_complete: issued_gsync_cnt %d, max %d\n",
                          issued_gsync_cnt, max_issued_gsync_cnt);
 
     /* there must be at most 1 missing allgather, since have to receive data from every one. */
@@ -330,20 +341,20 @@ static int ra_gsync_complete(void)
         mpi_errno = PMPI_Wait(&gsync_req, MPI_STATUS_IGNORE);
         if (mpi_errno != MPI_SUCCESS)
             return mpi_errno;
-        CSPG_ADAPT_DBG_PRINT(">>> >> ra_gsync_complete: previous allgather done\n");
+        CSPG_ADAPT_DBG_PRINT(">>> >> gadpt_gsync_complete: previous allgather done\n");
 
         /* issue last allgather */
-        mpi_errno = ra_gsync_iallgatherv();
+        mpi_errno = gadpt_gsync_iallgatherv();
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
-        CSPG_ADAPT_DBG_PRINT(">>> >> ra_gsync_complete: issue last allgather\n");
+        CSPG_ADAPT_DBG_PRINT(">>> >> gadpt_gsync_complete: issue last allgather\n");
     }
 
     /* wait on the last allgather */
     mpi_errno = PMPI_Wait(&gsync_req, MPI_STATUS_IGNORE);
     if (mpi_errno != MPI_SUCCESS)
         return mpi_errno;
-    CSPG_ADAPT_DBG_PRINT(">>> ra_gsync_complete: done\n");
+    CSPG_ADAPT_DBG_PRINT(">>> gadpt_gsync_complete: done\n");
 
   fn_exit:
     return mpi_errno;
@@ -351,7 +362,7 @@ static int ra_gsync_complete(void)
     goto fn_exit;
 }
 
-static CSP_async_stat ra_get_init_async_stat(void)
+static CSP_async_stat adpt_get_init_async_stat(void)
 {
     CSP_async_stat init_async_stat = CSP_ASYNC_NONE;
 
@@ -367,7 +378,7 @@ static CSP_async_stat ra_get_init_async_stat(void)
     return init_async_stat;
 }
 
-static int ra_gsync_init()
+static int gadpt_gsync_init()
 {
     int mpi_errno = MPI_SUCCESS;
     int i = 0, idx = 0;
@@ -376,9 +387,9 @@ static int ra_gsync_init()
     int lnft_nprocs = 0;
     MPI_Request *reqs = NULL;
 
-    PMPI_Comm_rank(CSPG_RA_GSYNC_COMM, &gsync_rank);
-    PMPI_Comm_size(CSPG_RA_GSYNC_COMM, &gsync_nprocs);
-    PMPI_Comm_size(CSPG_RA_LNTF_COMM, &lnft_nprocs);
+    PMPI_Comm_rank(GADPT_GSYNC_COMM, &gsync_rank);
+    PMPI_Comm_size(GADPT_GSYNC_COMM, &gsync_nprocs);
+    PMPI_Comm_size(GADPT_LNTF_COMM, &lnft_nprocs);
 
     /* initialize global synchronization parameters */
     gsync_user_ranks = CSP_calloc(num_all_stats, sizeof(int));
@@ -390,7 +401,7 @@ static int ra_gsync_init()
     /* gather number of states on every ghost */
     stats_cnts[gsync_rank] = num_local_stats;
     mpi_errno = PMPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL,
-                               stats_cnts, 1, MPI_INT, CSPG_RA_GSYNC_COMM);
+                               stats_cnts, 1, MPI_INT, GADPT_GSYNC_COMM);
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
@@ -404,8 +415,8 @@ static int ra_gsync_init()
     my_stats_disp = stats_disps[gsync_rank];
 
 #if defined(CSPG_DEBUG) || defined(CSPG_ADAPT_DEBUG)
-    CSP_ADAPT_DBG_PRINT(" ra_init: gather num_local_stats, symmetric=%d, node cnt/disps:\n",
-                        symmetric_num_stats);
+    CSPG_ADAPT_DBG_PRINT(" gadpt_init: gather num_local_stats, symmetric=%d, node cnt/disps:\n",
+                         symmetric_num_stats);
     for (i = 0; i < gsync_nprocs; i++)
         CSPG_ADAPT_DBG_PRINT(" \t[%d] = %d/%d\n", i, stats_cnts[i], stats_disps[i]);
 #endif
@@ -413,10 +424,10 @@ static int ra_gsync_init()
     /* gather local user ranks in comm_user_world. */
     idx = 0;
     for (i = 0; i < lnft_nprocs; i++) {
-        if (i == RA_LNTF_GHOST_RANK)
+        if (i == GADPT_LNTF_GHOST_RANK)
             continue;
         mpi_errno = PMPI_Irecv(&gsync_user_ranks[my_stats_disp + idx], 1, MPI_INT,
-                               i, 0, CSPG_RA_LNTF_COMM, &reqs[idx]);
+                               i, 0, GADPT_LNTF_COMM, &reqs[idx]);
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
         idx++;
@@ -428,17 +439,17 @@ static int ra_gsync_init()
     /* exchange user ranks in user world */
     if (symmetric_num_stats) {
         mpi_errno = PMPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, gsync_user_ranks,
-                                   num_local_stats, MPI_INT, CSPG_RA_GSYNC_COMM);
+                                   num_local_stats, MPI_INT, GADPT_GSYNC_COMM);
     }
     else {
         mpi_errno = PMPI_Allgatherv(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL,
                                     gsync_user_ranks, stats_cnts, stats_disps,
-                                    MPI_INT, CSPG_RA_GSYNC_COMM);
+                                    MPI_INT, GADPT_GSYNC_COMM);
     }
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
-    CSP_ADAPT_DBG_PRINT(" ra_init: gather users ranks in user world:\n");
+    CSPG_ADAPT_DBG_PRINT(" gadpt_init: gather users ranks in user world:\n");
 #if defined(CSPG_DEBUG) || defined(CSPG_ADAPT_DEBUG)
     for (i = 0; i < gsync_nprocs; i++) {
         int disp = stats_disps[i], j;
@@ -449,7 +460,7 @@ static int ra_gsync_init()
     }
 #endif
 
-    ra_gsync_interval_sta = PMPI_Wtime();
+    gadpt_gsync_interval_sta = PMPI_Wtime();
 
   fn_exit:
     if (reqs)
@@ -459,7 +470,7 @@ static int ra_gsync_init()
     goto fn_exit;
 }
 
-static int ra_comm_init(void)
+static int gadpt_comm_init(void)
 {
     int mpi_errno = MPI_SUCCESS;
     MPI_Group local_ug_group = MPI_GROUP_NULL;
@@ -472,13 +483,14 @@ static int ra_comm_init(void)
 
     /* create a gsync ghost communicator */
     mpi_errno = PMPI_Comm_split(MPI_COMM_WORLD, local_rank == CSP_RA_GSYNC_GHOST_LOCAL_RANK,
-                                1, &CSPG_RA_GSYNC_COMM);
+                                1, &GADPT_GSYNC_COMM);
 
     if (local_rank == CSP_RA_GSYNC_GHOST_LOCAL_RANK) {
         int gsync_rank = 0, gsync_nprocs = 0;
-        PMPI_Comm_rank(CSPG_RA_GSYNC_COMM, &gsync_rank);
-        PMPI_Comm_size(CSPG_RA_GSYNC_COMM, &gsync_nprocs);
-        CSPG_ADAPT_DBG_PRINT(" ra_init: create gsync_comm, I am %d/%d\n", gsync_rank, gsync_nprocs);
+        PMPI_Comm_rank(GADPT_GSYNC_COMM, &gsync_rank);
+        PMPI_Comm_size(GADPT_GSYNC_COMM, &gsync_nprocs);
+        CSPG_ADAPT_DBG_PRINT(" gadpt_init: create gsync_comm, I am %d/%d\n", gsync_rank,
+                             gsync_nprocs);
     }
 
     /* create user-root ghost communicator */
@@ -493,16 +505,16 @@ static int ra_comm_init(void)
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
-    mpi_errno = PMPI_Comm_create_group(CSP_COMM_LOCAL, local_ug_group, 0, &CSPG_RA_LNTF_COMM);
+    mpi_errno = PMPI_Comm_create_group(CSP_COMM_LOCAL, local_ug_group, 0, &GADPT_LNTF_COMM);
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
     if (local_rank == CSP_RA_GSYNC_GHOST_LOCAL_RANK) {
         int ra_lntf_rank = 0, ra_lntf_nprocs = 0;
-        PMPI_Comm_rank(CSPG_RA_LNTF_COMM, &ra_lntf_rank);
-        PMPI_Comm_size(CSPG_RA_LNTF_COMM, &ra_lntf_nprocs);
-        CSPG_ADAPT_DBG_PRINT(" ra_init: create ra_lntf_comm, I am %d/%d, ghost %d\n", ra_lntf_rank,
-                             ra_lntf_nprocs, RA_LNTF_GHOST_RANK);
+        PMPI_Comm_rank(GADPT_LNTF_COMM, &ra_lntf_rank);
+        PMPI_Comm_size(GADPT_LNTF_COMM, &ra_lntf_nprocs);
+        CSPG_ADAPT_DBG_PRINT(" gadpt_init: create lntf_comm, I am %d/%d, ghost %d\n", ra_lntf_rank,
+                             ra_lntf_nprocs, GADPT_LNTF_GHOST_RANK);
     }
 
   fn_exit:
@@ -516,7 +528,7 @@ static int ra_comm_init(void)
     goto fn_exit;
 }
 
-void CSPG_ra_finalize(void)
+static void gadpt_finalize(void)
 {
     int local_rank = 0;
 
@@ -528,15 +540,15 @@ void CSPG_ra_finalize(void)
         return;
 
     /* complete all local notification and global synchronization */
-    ra_lnotify_complete();
-    ra_gsync_complete();
+    gadpt_lnotify_complete();
+    gadpt_gsync_complete();
 
-    if (shm_global_stats_region.win && shm_global_stats_region.win != MPI_WIN_NULL) {
-        PMPI_Win_free(&shm_global_stats_region.win);
+    if (gadpt_l2_cache_region.win && gadpt_l2_cache_region.win != MPI_WIN_NULL) {
+        PMPI_Win_free(&gadpt_l2_cache_region.win);
     }
 
-    shm_global_stats_region.win = MPI_WIN_NULL;
-    shm_global_stats_region.base = NULL;
+    gadpt_l2_cache_region.win = MPI_WIN_NULL;
+    gadpt_l2_cache_region.base = NULL;
 
     if (stats_cnts) {
         free(stats_cnts);
@@ -554,17 +566,17 @@ void CSPG_ra_finalize(void)
         free(gsync_user_stats);
         gsync_user_stats = NULL;
     }
-    if (CSPG_RA_LNTF_COMM && CSPG_RA_LNTF_COMM != MPI_COMM_NULL) {
-        PMPI_Comm_free(&CSPG_RA_LNTF_COMM);
-        CSPG_RA_LNTF_COMM = MPI_COMM_NULL;
+    if (GADPT_LNTF_COMM && GADPT_LNTF_COMM != MPI_COMM_NULL) {
+        PMPI_Comm_free(&GADPT_LNTF_COMM);
+        GADPT_LNTF_COMM = MPI_COMM_NULL;
     }
-    if (CSPG_RA_GSYNC_COMM && CSPG_RA_GSYNC_COMM != MPI_COMM_NULL) {
-        PMPI_Comm_free(&CSPG_RA_GSYNC_COMM);
-        CSPG_RA_GSYNC_COMM = MPI_COMM_NULL;
+    if (GADPT_GSYNC_COMM && GADPT_GSYNC_COMM != MPI_COMM_NULL) {
+        PMPI_Comm_free(&GADPT_GSYNC_COMM);
+        GADPT_GSYNC_COMM = MPI_COMM_NULL;
     }
 }
 
-int CSPG_ra_init(void)
+static int gadpt_init(void)
 {
     int mpi_errno = MPI_SUCCESS;
     int local_rank = 0, local_nprocs = 0, nprocs = 0;
@@ -582,7 +594,7 @@ int CSPG_ra_init(void)
     num_all_stats = nprocs - CSP_ENV.num_g * CSP_NUM_NODES;
     num_local_stats = local_nprocs - CSP_ENV.num_g;     /* number of processes per node can be different,
                                                          * but number of ghosts per node is fixed.*/
-    mpi_errno = ra_comm_init();
+    mpi_errno = gadpt_comm_init();
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
@@ -591,59 +603,64 @@ int CSPG_ra_init(void)
 
     /* allocate shared region among local node for storing all processes' statuses */
     region_size = sizeof(int) * num_all_stats;
-    shm_global_stats_region.win = MPI_WIN_NULL;
-    shm_global_stats_region.base = NULL;
-    shm_global_stats_region.size = region_size;
+    gadpt_l2_cache_region.win = MPI_WIN_NULL;
+    gadpt_l2_cache_region.base = NULL;
+    gadpt_l2_cache_region.size = region_size;
 
     /* only the global synchronizing ghost allocates shared region. */
     mpi_errno = PMPI_Win_allocate_shared(region_size, 1, MPI_INFO_NULL,
-                                         CSPG_RA_LNTF_COMM, &shm_global_stats_region.base,
-                                         &shm_global_stats_region.win);
+                                         GADPT_LNTF_COMM, &gadpt_l2_cache_region.base,
+                                         &gadpt_l2_cache_region.win);
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
     CSPG_ADAPT_DBG_PRINT
-        (" ra_init: allocated shm_reg %p, size %ld, num_local_stats %d, num_all_stats %d\n",
-         shm_global_stats_region.base, region_size, num_local_stats, num_all_stats);
+        (" gadpt_init: allocated shm_reg %p, size %ld, num_local_stats %d, num_all_stats %d\n",
+         gadpt_l2_cache_region.base, region_size, num_local_stats, num_all_stats);
 
     /* initialize asynchronous state in cache */
-    shm_global_stats_ptr = shm_global_stats_region.base;
-    init_async_stat = ra_get_init_async_stat();
+    shm_global_stats_ptr = gadpt_l2_cache_region.base;
+    init_async_stat = adpt_get_init_async_stat();
 
-    mpi_errno = PMPI_Win_lock(MPI_LOCK_SHARED, RA_LNTF_GHOST_RANK, 0, shm_global_stats_region.win);
+    mpi_errno = PMPI_Win_lock(MPI_LOCK_SHARED, GADPT_LNTF_GHOST_RANK, 0, gadpt_l2_cache_region.win);
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
-    for (i = 0; i < num_local_stats; i++)
+    for (i = 0; i < num_all_stats; i++)
         shm_global_stats_ptr[i] = init_async_stat;
 
-    mpi_errno = PMPI_Win_unlock(RA_LNTF_GHOST_RANK, shm_global_stats_region.win);
+    mpi_errno = PMPI_Win_unlock(GADPT_LNTF_GHOST_RANK, gadpt_l2_cache_region.win);
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
-    mpi_errno = ra_lnotify_init();
+    mpi_errno = gadpt_lnotify_init();
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
     /* initialize global synchronization */
-    mpi_errno = ra_gsync_init();
+    mpi_errno = gadpt_gsync_init();
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
   fn_exit:
     return mpi_errno;
   fn_fail:
-    CSPG_ra_finalize();
+    gadpt_finalize();
     goto fn_exit;
 }
 
-/* Globally synchronize the asynchronous status of user processes.
- * If the status of local user processes has been updated (by user itself),
- * it globally broadcasts to all other gsync ghost processes; Meanwhile, it
- * receives messages from any gsync ghost process, and then update its local cache.
- * Note that this function should only be called by the single gsync ghost process
- * on every node. */
-int CSPG_ra_gsync(void)
+void CSPG_adpt_finalize(void)
+{
+    return gadpt_finalize();
+}
+
+int CSPG_adpt_init(void)
+{
+    return gadpt_init();
+}
+
+/* Globally synchronize the asynchronous status of user processes at set interval. */
+int CSPG_gadpt_sync(void)
 {
     int mpi_errno = MPI_SUCCESS;
     int local_rank = 0;
@@ -653,29 +670,29 @@ int CSPG_ra_gsync(void)
     if (CSP_ENV.async_sched_level < CSP_ASYNC_SCHED_ANYTIME || local_rank > 0)
         goto fn_exit;
 
-    ra_gsync_progress();
-    ra_lnotify_progress();
+    gadpt_gsync_progress();
+    gadpt_lnotify_progress();
 
     /* only issue synchronization if interval is large enough. */
     now = PMPI_Wtime();
-    if ((now - ra_gsync_interval_sta - CSP_ENV.async_timed_gsync_int) < 0)
+    if ((now - gadpt_gsync_interval_sta - CSP_ENV.gadpt_gsync_interval) < 0)
         goto fn_exit;
 
     /* if not ready for next issue, return */
-    if (!ra_gsync_ready())
+    if (!gadpt_gsync_ready())
         goto fn_exit;
 
     /* TODO: add update rate check. */
 
-    mpi_errno = ra_gsync_issue();
+    mpi_errno = gadpt_gsync_issue();
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
-    mpi_errno = ra_gsync_progress();
+    mpi_errno = gadpt_gsync_progress();
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
-    ra_gsync_interval_sta = now;
+    gadpt_gsync_interval_sta = now;
 
   fn_exit:
     return mpi_errno;

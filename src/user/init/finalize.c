@@ -23,7 +23,7 @@ int MPI_Finalize(void)
     }
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-    CSP_ra_finalize();
+    CSP_adpt_finalize();
 #endif
 
     if (CSP_COMM_USER_WORLD != MPI_COMM_NULL) {

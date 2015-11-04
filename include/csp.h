@@ -168,11 +168,11 @@ typedef struct {
 } CSP_local_shm_region;
 
 typedef enum {
-    CSP_GSYNC_UPDATE_LOCAL,     /* only update local cache. */
-    CSP_GSYNC_UPDATE_GHOST_SYNCED,      /* synchronously update ghost cache (i.e., in win-collective calls).
+    CSP_GADPT_UPDATE_LOCAL,     /* only update local cache. */
+    CSP_GADPT_UPDATE_GHOST_SYNCED,      /* synchronously update ghost cache (i.e., in win-collective calls).
                                          * thus can skip global synchronization. */
-    CSP_GSYNC_UPDATE_GHOST      /* update ghost cache */
-} CSP_gsync_update_flag;
+    CSP_GADPT_UPDATE_GHOST      /* update ghost cache */
+} CSP_gadpt_update_flag;
 
 typedef enum {
     CSP_LOAD_OPT_STATIC,
@@ -249,11 +249,11 @@ typedef struct CSP_env_param {
     CSP_async_sched_level async_sched_level;
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-    /* runtime scheduling options for asynchronous progress configuration */
-    int async_sched_thr_l;      /* low threshold */
-    int async_sched_thr_h;      /* high threshold */
-    double async_sched_min_int; /* minimal interval during two scheduling (in seconds). */
-    long long async_timed_gsync_int;    /* the interval between two timed
+    /* runtime adaptation options for asynchronous progress configuration */
+    int adpt_sched_thr_l;       /* low threshold */
+    int adpt_sched_thr_h;       /* high threshold */
+    double adpt_sched_interval; /* minimal interval during two scheduling (in seconds). */
+    long long gadpt_gsync_interval;     /* the interval between two timed
                                          * local scheduling (in seconds) */
     /* TODO: check updated rate in gsync */
     CSP_async_stat async_auto_stat;     /* default state for auto config. */
@@ -974,64 +974,61 @@ extern int CSP_win_gsync_update(CSP_win * ug_win);
 #define CSP_RUNTIME_ASYNC_SCHED_THR_DEFAULT_FREQ (50)
 #define CSP_RUNTIME_ASYNC_SCHED_DEFAULT_INT (0.1)       /* in seconds */
 
-extern void CSP_ra_update_async_stat(CSP_async_config async_config);
-extern CSP_async_stat CSP_ra_sched_async_stat_impl(void);
+extern void CSP_adpt_update_async_stat(CSP_async_config async_config);
 
-/* Immediately reschedule local asynchronous status according to runtime
- * profiling data.
+/* Reschedule local asynchronous status according to self-profiling data.
  * Note that we separate rescheduling and getting functions in order to
  * allow processes to locally reschedule once, and remotely exchange for
  * different windows multiple-times with the same status. */
-#define CSP_ra_sched_async_stat CSP_ra_sched_async_stat_impl
-
-extern CSP_async_stat CSP_ra_get_async_stat(void);
+extern CSP_async_stat CSP_adpt_sched_async_stat(void);
+extern CSP_async_stat CSP_adpt_get_async_stat(void);
 
 /* --------------------------------------------
  * Global asynchronous synchronization routines
  * -------------------------------------------- */
 #define CSP_RUNTIME_ASYNC_TIMED_GSYNC_DEFAULT_INT (180) /* in seconds, 3 mins */
-#define CSP_RA_LNOTIFY_RESET_TAG 10991
+#define CSP_GADPT_LNOTIFY_RESET_TAG 10991
 
 typedef enum {
-    CSP_RA_LNOTIFY_NONE,
-    CSP_RA_LNOTIFY_DIRTY,
-    CSP_RA_LNOTIFY_RESET,
-    CSP_RA_LNOTIFY_END
-} CSP_ra_lnotify_type;
+    CSP_GADPT_LNOTIFY_NONE,
+    CSP_GADPT_LNOTIFY_DIRTY,
+    CSP_GADPT_LNOTIFY_RESET,
+    CSP_GADPT_LNOTIFY_END
+} CSP_gadpt_lnotify_type;
 
-typedef struct CSP_ra_dirty_lnotify_pk {
-    CSP_ra_lnotify_type type;
-} CSP_ra_dirty_lnotify_pkt_t;
+typedef struct CSP_adpt_dirty_lnotify_pk {
+    CSP_gadpt_lnotify_type type;
+} CSP_gadpt_dirty_lnotify_pkt_t;
 
-typedef struct CSP_ra_reset_lnotify_pkt {
-    CSP_ra_lnotify_type type;
-} CSP_ra_reset_lnotify_pkt_t;
+typedef struct CSP_adpt_reset_lnotify_pkt {
+    CSP_gadpt_lnotify_type type;
+} CSP_gadpt_reset_lnotify_pkt_t;
 
-extern CSP_async_stat *ra_gsync_local_cache;
+extern CSP_async_stat *gadpt_local_cache;
 
-extern int CSP_ra_init(void);
-extern void CSP_ra_finalize(void);
-extern int CSP_ra_gsync_update(int count, int *user_world_ranks, CSP_async_stat * stats,
-                               CSP_gsync_update_flag flag);
-extern int CSP_ra_gsync_refresh(void);
+extern int CSP_adpt_init(void);
+extern void CSP_adpt_finalize(void);
+extern int CSP_gadpt_update(int count, int *user_world_ranks, CSP_async_stat * stats,
+                            CSP_gadpt_update_flag flag);
+extern int CSP_gadpt_refresh(void);
 
-static inline int CSP_ra_gsync_get_stat(int user_rank)
+static inline int CSP_gadpt_get_stat(int user_rank)
 {
-    return ra_gsync_local_cache[user_rank];
+    return gadpt_local_cache[user_rank];
 }
 
-static inline int CSP_ra_gsync(void)
+static inline int CSP_gadpt_sync(void)
 {
     int mpi_errno = MPI_SUCCESS;
 
     if (CSP_ENV.async_sched_level < CSP_ASYNC_SCHED_ANYTIME)
         return mpi_errno;
 
-    /* update local asynchronous status */
-    CSP_ra_sched_async_stat_impl();
+    /* reschedule local async status */
+    CSP_adpt_sched_async_stat();
 
-    /* refresh local gsync cache */
-    mpi_errno = CSP_ra_gsync_refresh();
+    /* try to refresh local cache from ghost */
+    mpi_errno = CSP_gadpt_refresh();
 
     return mpi_errno;
 }
@@ -1041,14 +1038,14 @@ static inline int CSP_ra_gsync(void)
                                          * synchronization. */
 
 #else
-#define CSP_ra_sched_async_stat() {/*do nothing */}
-#define CSP_ra_get_async_stat() {/*do nothing */}
-#define CSP_ra_gsync() {/*do nothing*/}
+#define CSP_adpt_sched_async_stat() {/*do nothing */}
+#define CSP_adpt_get_async_stat() {/*do nothing */}
+#define CSP_gadpt() {/*do nothing*/}
 #endif /* end of CSP_ENABLE_RUNTIME_ASYNC_SCHED */
 
 #define CSP_MPI_FUNC_START_ROUTINE() do {                 \
         CSP_rm_count_start(CSP_RM_COMM_FREQ);             \
-        CSP_ra_gsync();                                   \
+        CSP_gadpt_sync();                                 \
         } while (0)
 #define CSP_MPI_FUNC_END_ROUTINE() do {                   \
         CSP_rm_count_end(CSP_RM_COMM_FREQ);               \

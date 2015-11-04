@@ -206,7 +206,7 @@ int CSP_win_gsync_update(CSP_win * ug_win)
     int i, user_nprocs = 0, local_user_rank = 0;
     int *ranks_in_world = NULL;
     CSP_async_stat *async_stats = NULL;
-    CSP_gsync_update_flag flag = CSP_GSYNC_UPDATE_LOCAL;
+    CSP_gadpt_update_flag flag = CSP_GADPT_UPDATE_LOCAL;
 
     if (CSP_ENV.async_sched_level < CSP_ASYNC_SCHED_ANYTIME)
         goto fn_exit;
@@ -224,9 +224,9 @@ int CSP_win_gsync_update(CSP_win * ug_win)
 
     /* all processes update local cache, only root updates ghost cache. */
     if (local_user_rank == 0)
-        flag = CSP_GSYNC_UPDATE_GHOST_SYNCED;
+        flag = CSP_GADPT_UPDATE_GHOST_SYNCED;
 
-    mpi_errno = CSP_ra_gsync_update(user_nprocs, ranks_in_world, async_stats, flag);
+    mpi_errno = CSP_gadpt_update(user_nprocs, ranks_in_world, async_stats, flag);
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
@@ -274,12 +274,12 @@ int CSP_win_coll_sched_async_config(CSP_win * ug_win)
     if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
         if (ug_win->info_args.async_config_phases & CSP_ASYNC_CONFIG_PHASE_LOCAL_UPDATE) {
             /* reschedule my status according to runtime monitored data. */
-            CSP_ra_sched_async_stat();
+            CSP_adpt_sched_async_stat();
         }
 
         if (ug_win->info_args.async_config_phases & CSP_ASYNC_CONFIG_PHASE_REMOTE_EXCHANGE) {
             /* read my current status. */
-            my_async_stat = CSP_ra_get_async_stat();
+            my_async_stat = CSP_adpt_get_async_stat();
 
             /* exchange with all targets. */
             tmp_gather_buf = CSP_calloc(user_nprocs, sizeof(MPI_Aint));

@@ -40,7 +40,7 @@ int CSPG_func_start(CSP_func * FUNC, int *user_local_root, int *user_nprocs, int
                 return mpi_errno;
 
             /* progress on global asynchronous status synchronization. */
-            mpi_errno = CSPG_ra_gsync();
+            mpi_errno = CSPG_gadpt_sync();
             if (mpi_errno != MPI_SUCCESS)
                 return mpi_errno;
         }

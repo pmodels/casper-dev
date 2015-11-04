@@ -201,43 +201,43 @@ static int CSP_initialize_env()
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
     /* Runtime scheduling of asynchronous progress configuration */
-    CSP_ENV.async_sched_thr_l = CSP_RUNTIME_ASYNC_SCHED_THR_DEFAULT_FREQ;
-    CSP_ENV.async_sched_thr_h = CSP_RUNTIME_ASYNC_SCHED_THR_DEFAULT_FREQ;
-    CSP_ENV.async_timed_gsync_int = CSP_RUNTIME_ASYNC_TIMED_GSYNC_DEFAULT_INT;
+    CSP_ENV.adpt_sched_thr_l = CSP_RUNTIME_ASYNC_SCHED_THR_DEFAULT_FREQ;
+    CSP_ENV.adpt_sched_thr_h = CSP_RUNTIME_ASYNC_SCHED_THR_DEFAULT_FREQ;
+    CSP_ENV.gadpt_gsync_interval = CSP_RUNTIME_ASYNC_TIMED_GSYNC_DEFAULT_INT;
 
     val = getenv("CSP_RUNTIME_ASYNC_SCHED_THR_H");
     if (val && strlen(val)) {
-        CSP_ENV.async_sched_thr_h = atoi(val);
+        CSP_ENV.adpt_sched_thr_h = atoi(val);
     }
     val = getenv("CSP_RUNTIME_ASYNC_SCHED_THR_L");
     if (val && strlen(val)) {
-        CSP_ENV.async_sched_thr_l = atoi(val);
+        CSP_ENV.adpt_sched_thr_l = atoi(val);
     }
 
-    if (CSP_ENV.async_sched_thr_l > CSP_ENV.async_sched_thr_h) {
+    if (CSP_ENV.adpt_sched_thr_l > CSP_ENV.adpt_sched_thr_h) {
         CSP_ERR_PRINT("Wrong CSP_RUNTIME_ASYNC_SCHED_THR_H %d or "
                       "CSP_RUNTIME_ASYNC_SCHED_THR_L %d\n",
-                      CSP_ENV.async_sched_thr_h, CSP_ENV.async_sched_thr_l);
+                      CSP_ENV.adpt_sched_thr_h, CSP_ENV.adpt_sched_thr_l);
         return -1;
     }
 
-    CSP_ENV.async_sched_min_int = CSP_RUNTIME_ASYNC_SCHED_DEFAULT_INT;
+    CSP_ENV.adpt_sched_interval = CSP_RUNTIME_ASYNC_SCHED_DEFAULT_INT;
     val = getenv("CSP_RUNTIME_ASYNC_SCHED_MIN_INT");
     if (val && strlen(val)) {
-        CSP_ENV.async_sched_min_int = atof(val);
+        CSP_ENV.adpt_sched_interval = atof(val);
     }
-    if (CSP_ENV.async_sched_min_int < 0) {
-        CSP_ERR_PRINT("Wrong async_sched_min_int %lf\n", CSP_ENV.async_sched_min_int);
+    if (CSP_ENV.adpt_sched_interval < 0) {
+        CSP_ERR_PRINT("Wrong adpt_sched_interval %lf\n", CSP_ENV.adpt_sched_interval);
         return -1;
     }
 
     val = getenv("CSP_RUNTIME_ASYNC_TIMED_GSYNC_INT");
     if (val && strlen(val)) {
-        CSP_ENV.async_timed_gsync_int = atoll(val);
+        CSP_ENV.gadpt_gsync_interval = atoll(val);
     }
-    if (CSP_ENV.async_timed_gsync_int < 0) {
+    if (CSP_ENV.gadpt_gsync_interval < 0) {
         CSP_ERR_PRINT("Wrong CSP_RUNTIME_ASYNC_TIMED_GSYNC_INT %lld\n",
-                      CSP_ENV.async_timed_gsync_int);
+                      CSP_ENV.gadpt_gsync_interval);
         return -1;
     }
 #endif
@@ -291,8 +291,8 @@ static int CSP_initialize_env()
                        "    CSP_RUNTIME_ASYNC_SCHED_MIN_INT = %lf \n"
                        "    CSP_RUNTIME_ASYNC_TIMED_GSYNC_INT = %lld(s) \n",
                        CSP_get_target_async_stat_name(CSP_ENV.async_auto_stat),
-                       CSP_ENV.async_sched_thr_l, CSP_ENV.async_sched_thr_h,
-                       CSP_ENV.async_sched_min_int, CSP_ENV.async_timed_gsync_int);
+                       CSP_ENV.adpt_sched_thr_l, CSP_ENV.adpt_sched_thr_h,
+                       CSP_ENV.adpt_sched_interval, CSP_ENV.gadpt_gsync_interval);
 #endif
         CSP_INFO_PRINT(1, "\n");
         fflush(stdout);
@@ -499,7 +499,7 @@ int MPI_Init_thread(int *argc, char ***argv, int required, int *provided)
                       local_user_nprocs, CSP_MY_NODE_ID);
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-        mpi_errno = CSP_ra_init();
+        mpi_errno = CSP_adpt_init();
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
 #endif
@@ -520,7 +520,7 @@ int MPI_Init_thread(int *argc, char ***argv, int required, int *provided)
             free(ranks_in_world);
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-        mpi_errno = CSPG_ra_init();
+        mpi_errno = CSPG_adpt_init();
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
 #endif
@@ -544,7 +544,7 @@ int MPI_Init_thread(int *argc, char ***argv, int required, int *provided)
   fn_fail:
     /* --BEGIN ERROR HANDLING-- */
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-    CSP_ra_finalize();
+    CSP_adpt_finalize();
 #endif
 
     if (CSP_COMM_USER_WORLD != MPI_COMM_NULL) {

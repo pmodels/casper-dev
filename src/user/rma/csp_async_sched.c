@@ -13,7 +13,7 @@
 
 static CSP_async_stat CSP_MY_ASYNC_STAT = CSP_ASYNC_NONE;
 
-void CSP_ra_update_async_stat(CSP_async_config async_config)
+void CSP_adpt_update_async_stat(CSP_async_config async_config)
 {
     switch (async_config) {
     case CSP_ASYNC_CONFIG_ON:
@@ -32,16 +32,13 @@ void CSP_ra_update_async_stat(CSP_async_config async_config)
 }
 
 /* Get current asynchronous status. */
-CSP_async_stat CSP_ra_get_async_stat(void)
+CSP_async_stat CSP_adpt_get_async_stat(void)
 {
     return CSP_MY_ASYNC_STAT;
 }
 
-/* Internal implementation for scheduling local asynchronous status.
- * In any MPI function, this routine should not be directly called,
- * instead, call CSP_ra_sched_async_stat for immediately scheduling,
- * or call other timed scheduling routine such as CSP_win_timed_gsync_all. */
-CSP_async_stat CSP_ra_sched_async_stat_impl(void)
+/* Schedule local asynchronous status.*/
+CSP_async_stat CSP_adpt_sched_async_stat(void)
 {
     double interval;
     int freq = 0;
@@ -53,13 +50,13 @@ CSP_async_stat CSP_ra_sched_async_stat_impl(void)
     freq = (int) (CSP_RM[CSP_RM_COMM_FREQ].time / interval * 100);
 
     /* do not change state if interval is too short */
-    if (interval < CSP_ENV.async_sched_min_int)
+    if (interval < CSP_ENV.adpt_sched_interval)
         return CSP_MY_ASYNC_STAT;
 
-    if (freq >= CSP_ENV.async_sched_thr_h) {
+    if (freq >= CSP_ENV.adpt_sched_thr_h) {
         CSP_MY_ASYNC_STAT = CSP_ASYNC_OFF;
     }
-    else if (freq <= CSP_ENV.async_sched_thr_l) {
+    else if (freq <= CSP_ENV.adpt_sched_thr_l) {
         CSP_MY_ASYNC_STAT = CSP_ASYNC_ON;
     }
 
@@ -78,7 +75,7 @@ CSP_async_stat CSP_ra_sched_async_stat_impl(void)
     if (CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_ANYTIME && old_stat != CSP_MY_ASYNC_STAT) {
         int user_rank = 0;
         PMPI_Comm_rank(CSP_COMM_USER_WORLD, &user_rank);
-        CSP_ra_gsync_update(1, &user_rank, &CSP_MY_ASYNC_STAT, CSP_GSYNC_UPDATE_GHOST);
+        CSP_gadpt_update(1, &user_rank, &CSP_MY_ASYNC_STAT, CSP_GADPT_UPDATE_GHOST);
     }
 
     CSP_rm_reset(CSP_RM_COMM_FREQ);

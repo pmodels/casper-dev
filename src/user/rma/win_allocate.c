@@ -652,7 +652,7 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
         goto fn_fail;
 
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-    CSP_ra_update_async_stat(ug_win->info_args.async_config);
+    CSP_adpt_update_async_stat(ug_win->info_args.async_config);
 #endif
 
     /* If user turns off asynchronous redirection in per-window scheduling level,
@@ -682,11 +682,11 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
      * asynchronous configure with every target, since its value might be different. */
     if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
         if (ug_win->info_args.async_config_phases & CSP_ASYNC_CONFIG_PHASE_LOCAL_UPDATE)
-            CSP_ra_sched_async_stat();
+            CSP_adpt_sched_async_stat();
 
         /* Win_allocate can skip local rescheduling, but should always remote exchange
          * because we need initial status for each target. */
-        my_async_stat = CSP_ra_get_async_stat();
+        my_async_stat = CSP_adpt_get_async_stat();
         tmp_gather_cnt++;
     }
     else
