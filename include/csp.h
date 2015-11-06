@@ -983,6 +983,30 @@ extern void CSP_adpt_update_async_stat(CSP_async_config async_config);
 extern CSP_async_stat CSP_adpt_sched_async_stat(void);
 extern CSP_async_stat CSP_adpt_get_async_stat(void);
 
+typedef struct {
+    int to_user;
+    int to_ghost;
+} CSP_adapt_op_counter;
+
+typedef struct {
+    CSP_adapt_op_counter get;
+    CSP_adapt_op_counter put;
+    CSP_adapt_op_counter acc;
+    CSP_adapt_op_counter get_acc;
+    CSP_adapt_op_counter fop;
+    CSP_adapt_op_counter cas;
+} CSP_adapt_rma_prof;
+
+#ifdef CSP_ENABLE_ADAPT_PROF
+extern CSP_adapt_rma_prof ADAPT_RMA_PROF;
+
+#define CSP_ADAPT_PROF_INC_TO_USER_CNT(op) {ADAPT_RMA_PROF.op.to_user++;}
+#define CSP_ADAPT_PROF_INC_TO_GHOST_CNT(op) {ADAPT_RMA_PROF.op.to_ghost++;}
+#else
+#define CSP_ADAPT_PROF_INC_TO_USER_CNT(op)
+#define CSP_ADAPT_PROF_INC_TO_GHOST_CNT(op)
+#endif
+
 /* --------------------------------------------
  * Global asynchronous synchronization routines
  * -------------------------------------------- */

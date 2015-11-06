@@ -41,10 +41,14 @@ static int CSP_get_accumulate_impl(const void *origin_addr, int origin_count,
                                         target->ug_rank, target_disp, target_count,
                                         target_datatype, op, *win_ptr);
 
+        CSP_ADAPT_PROF_INC_TO_USER_CNT(get_acc);
+
         CSP_DBG_PRINT("CASPER Get_accumulate to (target %d, win 0x%x [%s]) \n",
                       target->ug_rank, *win_ptr, CSP_target_get_epoch_stat_name(target, ug_win));
         return mpi_errno;
     }
+
+    CSP_ADAPT_PROF_INC_TO_GHOST_CNT(get_acc);
 
     /* Should not do local RMA in accumulate because of atomicity issue */
     /* TODO: Implement get_acc for segmentation */

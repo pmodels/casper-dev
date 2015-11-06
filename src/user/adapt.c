@@ -48,6 +48,47 @@ static int recvd_dirty_cnt = 0;
 static int local_dirty_flag = 0;
 static int dirty_notify_end_flag = 0;
 
+#ifdef CSP_ENABLE_ADAPT_PROF
+CSP_adapt_rma_prof ADAPT_RMA_PROF;
+
+static void adapt_prof_reset(void)
+{
+    ADAPT_RMA_PROF.put.to_ghost = ADAPT_RMA_PROF.put.to_user = 0;
+    ADAPT_RMA_PROF.get.to_ghost = ADAPT_RMA_PROF.get.to_user = 0;
+    ADAPT_RMA_PROF.acc.to_ghost = ADAPT_RMA_PROF.acc.to_user = 0;
+    ADAPT_RMA_PROF.get_acc.to_ghost = ADAPT_RMA_PROF.get_acc.to_user = 0;
+    ADAPT_RMA_PROF.fop.to_ghost = ADAPT_RMA_PROF.fop.to_user = 0;
+    ADAPT_RMA_PROF.cas.to_ghost = ADAPT_RMA_PROF.cas.to_user = 0;
+}
+
+static void adapt_prof_dump(void)
+{
+    CSP_INFO_PRINT(4, "ADAPT rma profiling (op to user:ghost): ");
+    if (ADAPT_RMA_PROF.put.to_ghost > 0 || ADAPT_RMA_PROF.put.to_user > 0) {
+        CSP_INFO_PRINT(4, " put %d:%d, ", ADAPT_RMA_PROF.put.to_user, ADAPT_RMA_PROF.put.to_ghost);
+    }
+    if (ADAPT_RMA_PROF.get.to_ghost > 0 || ADAPT_RMA_PROF.get.to_user > 0) {
+        CSP_INFO_PRINT(4, " get %d:%d, ", ADAPT_RMA_PROF.get.to_user, ADAPT_RMA_PROF.get.to_ghost);
+    }
+    if (ADAPT_RMA_PROF.acc.to_ghost > 0 || ADAPT_RMA_PROF.acc.to_user > 0) {
+        CSP_INFO_PRINT(4, " acc %d:%d, ", ADAPT_RMA_PROF.acc.to_user, ADAPT_RMA_PROF.acc.to_ghost);
+    }
+    if (ADAPT_RMA_PROF.get_acc.to_ghost > 0 || ADAPT_RMA_PROF.get_acc.to_user > 0) {
+        CSP_INFO_PRINT(4, " get_acc %d:%d, ", ADAPT_RMA_PROF.get_acc.to_user,
+                       ADAPT_RMA_PROF.get_acc.to_ghost);
+    }
+    if (ADAPT_RMA_PROF.fop.to_ghost > 0 || ADAPT_RMA_PROF.fop.to_user > 0) {
+        CSP_INFO_PRINT(4, " fop %d:%d, ", ADAPT_RMA_PROF.fop.to_user, ADAPT_RMA_PROF.fop.to_ghost);
+    }
+    if (ADAPT_RMA_PROF.cas.to_ghost > 0 || ADAPT_RMA_PROF.cas.to_user > 0) {
+        CSP_INFO_PRINT(4, " cas %d:%d, ", ADAPT_RMA_PROF.cas.to_user, ADAPT_RMA_PROF.cas.to_ghost);
+    }
+    CSP_INFO_PRINT(4, "\n");
+
+    adapt_prof_reset();
+}
+#endif
+
 static inline int gadpt_lnotify_progress(void)
 {
     int mpi_errno = MPI_SUCCESS;
@@ -286,8 +327,7 @@ int CSP_gadpt_refresh(void)
     PMPI_Comm_rank(CSP_COMM_USER_WORLD, &user_rank);
 
     /* per-integer atomic read. */
-    mpi_errno = PMPI_Win_lock(MPI_LOCK_SHARED, GADPT_LNTF_GHOST_RANK,
-                              0, gadpt_l2_cache_region.win);
+    mpi_errno = PMPI_Win_lock(MPI_LOCK_SHARED, GADPT_LNTF_GHOST_RANK, 0, gadpt_l2_cache_region.win);
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
@@ -317,6 +357,10 @@ int CSP_gadpt_refresh(void)
         }
         CSP_INFO_PRINT(3, "GADPT local cache refresh: on %d; off %d\n",
                        async_on_cnt, async_off_cnt);
+
+#ifdef CSP_ENABLE_ADAPT_PROF
+        adapt_prof_dump();
+#endif
     }
 
   fn_exit:
@@ -432,6 +476,10 @@ int CSP_adpt_init(void)
     mpi_errno = gadpt_init();
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
+
+#ifdef CSP_ENABLE_ADAPT_PROF
+    adapt_prof_reset();
+#endif
 
   fn_exit:
     return mpi_errno;

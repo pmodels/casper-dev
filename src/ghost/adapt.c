@@ -222,8 +222,7 @@ static int gadpt_gsync_issue(void)
 
     memset(gsync_user_stats, 0, num_all_stats * sizeof(int));
 
-    mpi_errno = PMPI_Win_lock(MPI_LOCK_SHARED, GADPT_LNTF_GHOST_RANK,
-                              0, gadpt_l2_cache_region.win);
+    mpi_errno = PMPI_Win_lock(MPI_LOCK_SHARED, GADPT_LNTF_GHOST_RANK, 0, gadpt_l2_cache_region.win);
 
     /* read state.
      * Note that we store states by rank in cache (rank can be non-contiguous in odd_even),
