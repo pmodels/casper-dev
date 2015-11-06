@@ -171,7 +171,6 @@ typedef enum {
     CSP_GADPT_UPDATE_LOCAL,     /* only update local cache. */
     CSP_GADPT_UPDATE_GHOST_SYNCED,      /* synchronously update ghost cache (i.e., in win-collective calls).
                                          * thus can skip global synchronization. */
-    CSP_GADPT_UPDATE_GHOST      /* update ghost cache */
 } CSP_gadpt_update_flag;
 
 typedef enum {
@@ -1032,6 +1031,7 @@ extern CSP_async_stat *gadpt_local_cache;
 
 extern int CSP_adpt_init(void);
 extern void CSP_adpt_finalize(void);
+extern int CSP_gadpt_upload_local(CSP_async_stat stat);
 extern int CSP_gadpt_update(int count, int *user_world_ranks, CSP_async_stat * stats,
                             CSP_gadpt_update_flag flag);
 extern int CSP_gadpt_refresh(void);

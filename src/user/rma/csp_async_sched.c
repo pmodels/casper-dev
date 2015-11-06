@@ -73,9 +73,7 @@ CSP_async_stat CSP_adpt_sched_async_stat(void)
 
     /* update ghost caches if my status is changed */
     if (CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_ANYTIME && old_stat != CSP_MY_ASYNC_STAT) {
-        int user_rank = 0;
-        PMPI_Comm_rank(CSP_COMM_USER_WORLD, &user_rank);
-        CSP_gadpt_update(1, &user_rank, &CSP_MY_ASYNC_STAT, CSP_GADPT_UPDATE_GHOST);
+        CSP_gadpt_upload_local(CSP_MY_ASYNC_STAT);
     }
 
     CSP_rm_reset(CSP_RM_COMM_FREQ);

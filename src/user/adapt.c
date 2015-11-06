@@ -241,24 +241,48 @@ static int gadpt_comm_init(void)
     goto fn_exit;
 }
 
-/* Update asynchronous status in GADPT caches.
- * It is called when local state is updated, or receive other processes' state in
- * win-collective calls. The caller can set flag to for three level updates:
- * - only update local cache
- * - update both local and level-2 cache
- * - update both local and level-2 cache synchronously (which means all ghosts are
- *   changed to the same value, thus next ghost synchronization can be skipped).
- *   For example, win-collective update can set this flag to avoid unnecessary
- *   synchronization. */
+/* Update local asynchronous status in GADPT caches. */
+int CSP_gadpt_upload_local(CSP_async_stat stat)
+{
+    int mpi_errno = MPI_SUCCESS;
+    MPI_Aint target_disp = 0;
+    int user_rank = 0;
+
+    if (CSP_ENV.async_sched_level < CSP_ASYNC_SCHED_ANYTIME)
+        return mpi_errno;
+
+    PMPI_Comm_rank(CSP_COMM_USER_WORLD, &user_rank);
+
+    /* write to local cache. */
+    gadpt_local_cache[user_rank] = stat;
+
+    /* per-integer atomic write. */
+    target_disp = sizeof(int) * user_rank;
+    mpi_errno = PMPI_Accumulate(&gadpt_local_cache[user_rank], 1, MPI_INT,
+                                GADPT_LNTF_GHOST_RANK, target_disp, 1, MPI_INT,
+                                MPI_REPLACE, gadpt_l2_cache_region.win);
+    if (mpi_errno != MPI_SUCCESS)
+        return mpi_errno;
+
+    return PMPI_Win_flush(GADPT_LNTF_GHOST_RANK, gadpt_l2_cache_region.win);
+}
+
+/* Update multiple asynchronous status in GADPT caches.
+ * It is called when received other processes' state in win-collective calls.
+ * The caller can set flag for two level updates:
+ * - all user processes update its local cache.
+ * - only one local process also updates level-2 cache and ask ghost to skip the
+ *   next ghost synchronization (because already synchronized by users) */
 int CSP_gadpt_update(int count, int *user_world_ranks, CSP_async_stat * stats,
                      CSP_gadpt_update_flag flag)
 {
     int mpi_errno = MPI_SUCCESS;
-    int i = 0, rank = 0;
-    MPI_Aint target_disp = 0;
+    int i = 0, rank = 0, user_nprocs = 0;
 
     if (CSP_ENV.async_sched_level < CSP_ASYNC_SCHED_ANYTIME)
         goto fn_exit;
+
+    PMPI_Comm_size(CSP_COMM_USER_WORLD, &user_nprocs);
 
     /* write to local cache. */
     for (i = 0; i < count; i++) {
@@ -268,34 +292,22 @@ int CSP_gadpt_update(int count, int *user_world_ranks, CSP_async_stat * stats,
 
     /* update ghost cache */
     if (flag > CSP_GADPT_UPDATE_LOCAL) {
-        mpi_errno = PMPI_Win_lock(MPI_LOCK_EXCLUSIVE, GADPT_LNTF_GHOST_RANK,
-                                  0, gadpt_l2_cache_region.win);
+        /* per-integer atomic write. */
+        mpi_errno = PMPI_Accumulate(gadpt_local_cache, user_nprocs, MPI_INT,
+                                    GADPT_LNTF_GHOST_RANK, 0, user_nprocs, MPI_INT,
+                                    MPI_REPLACE, gadpt_l2_cache_region.win);
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
 
-        /* per-integer atomic write. */
-        for (i = 0; i < count; i++) {
-            rank = user_world_ranks[i];
-            target_disp = sizeof(int) * rank;
-
-            mpi_errno = PMPI_Accumulate(&gadpt_local_cache[rank], 1, MPI_INT,
-                                        GADPT_LNTF_GHOST_RANK, target_disp,
-                                        1, MPI_INT, MPI_REPLACE, gadpt_l2_cache_region.win);
-            if (mpi_errno != MPI_SUCCESS)
-                goto fn_fail;
-        }
-
-        mpi_errno = PMPI_Win_unlock(GADPT_LNTF_GHOST_RANK, gadpt_l2_cache_region.win);
+        mpi_errno = PMPI_Win_flush(GADPT_LNTF_GHOST_RANK, gadpt_l2_cache_region.win);
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
 
         CSP_ADAPT_DBG_PRINT(">>> gadpt_update count=%d (remote)\n", count);
 
-        if (flag == CSP_GADPT_UPDATE_GHOST_SYNCED) {
-            mpi_errno = gadpt_lnotify_issue_reset();
-            if (mpi_errno != MPI_SUCCESS)
-                goto fn_fail;
-        }
+        mpi_errno = gadpt_lnotify_issue_reset();
+        if (mpi_errno != MPI_SUCCESS)
+            goto fn_fail;
     }
 
   fn_exit:
@@ -327,17 +339,13 @@ int CSP_gadpt_refresh(void)
     PMPI_Comm_rank(CSP_COMM_USER_WORLD, &user_rank);
 
     /* per-integer atomic read. */
-    mpi_errno = PMPI_Win_lock(MPI_LOCK_SHARED, GADPT_LNTF_GHOST_RANK, 0, gadpt_l2_cache_region.win);
-    if (mpi_errno != MPI_SUCCESS)
-        goto fn_fail;
-
     mpi_errno = PMPI_Get_accumulate(NULL, 0, MPI_INT, gadpt_local_cache, user_nprocs, MPI_INT,
                                     GADPT_LNTF_GHOST_RANK, 0, user_nprocs, MPI_INT,
                                     MPI_NO_OP, gadpt_l2_cache_region.win);
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
-    mpi_errno = PMPI_Win_unlock(GADPT_LNTF_GHOST_RANK, gadpt_l2_cache_region.win);
+    mpi_errno = PMPI_Win_flush(GADPT_LNTF_GHOST_RANK, gadpt_l2_cache_region.win);
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
@@ -381,6 +389,7 @@ static void gadpt_finalize(void)
         GADPT_LNTF_COMM = MPI_COMM_NULL;
     }
     if (gadpt_l2_cache_region.win && gadpt_l2_cache_region.win != MPI_WIN_NULL) {
+        PMPI_Win_unlock(GADPT_LNTF_GHOST_RANK, gadpt_l2_cache_region.win);
         PMPI_Win_free(&gadpt_l2_cache_region.win);
     }
 
@@ -431,6 +440,11 @@ static int gadpt_init(void)
     mpi_errno = PMPI_Win_shared_query(gadpt_l2_cache_region.win,
                                       GADPT_LNTF_GHOST_RANK,
                                       &r_size, &r_disp_unit, &gadpt_l2_cache_region.base);
+    if (mpi_errno != MPI_SUCCESS)
+        goto fn_fail;
+
+    mpi_errno = PMPI_Win_lock(MPI_LOCK_SHARED, GADPT_LNTF_GHOST_RANK, MPI_MODE_NOCHECK,
+                              gadpt_l2_cache_region.win);
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 

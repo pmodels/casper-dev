@@ -42,8 +42,7 @@
 
 static CSP_local_shm_region gadpt_l2_cache_region;      /* asynchronous status of all user processes.
                                                          * one copy per node. */
-static CSP_async_stat *shm_global_stats_ptr = NULL;     /* point to shm region, do not free.
-                                                         * states are stored by user world rank. */
+static CSP_async_stat *shm_atomic_access_buf = NULL;
 static int num_local_stats = 0, num_all_stats = 0;
 static int symmetric_num_stats = 0;
 
@@ -72,6 +71,47 @@ static int *gsync_user_stats = NULL;
 static int *stats_cnts = NULL, *stats_disps = NULL;     /*in integer */
 static int issued_gsync_cnt = 0;
 
+/* Per-element atomic load shared level-2 cache to shm_atomic_access_buf.
+ * Caller should only call the load function and then access shm_atomic_access_buf,
+ * but not direct access to window region. */
+static inline int gadpt_atomic_load_l2_cache(void)
+{
+    int mpi_errno = MPI_SUCCESS;
+
+    /* per-element atomic read */
+    mpi_errno = PMPI_Get_accumulate(NULL, 0, MPI_INT, shm_atomic_access_buf, num_all_stats,
+                                    MPI_INT, GADPT_LNTF_GHOST_RANK, 0, num_all_stats,
+                                    MPI_INT, MPI_NO_OP, gadpt_l2_cache_region.win);
+    if (mpi_errno != MPI_SUCCESS)
+        return mpi_errno;
+
+    mpi_errno = PMPI_Win_flush(GADPT_LNTF_GHOST_RANK, gadpt_l2_cache_region.win);
+    if (mpi_errno != MPI_SUCCESS)
+        return mpi_errno;
+
+    return mpi_errno;
+}
+
+/* Per-element atomic store shared level-2 cache from shm_atomic_access_buf.
+ * Caller should only update shm_atomic_access_buf and call the store function,
+ * but not direct access to window region. */
+static inline int gadpt_atomic_store_l2_cache(void)
+{
+    int mpi_errno = MPI_SUCCESS;
+
+    /* per-element atomic write */
+    mpi_errno = PMPI_Accumulate(shm_atomic_access_buf, num_all_stats, MPI_INT,
+                                GADPT_LNTF_GHOST_RANK, 0, num_all_stats, MPI_INT,
+                                MPI_REPLACE, gadpt_l2_cache_region.win);
+    if (mpi_errno != MPI_SUCCESS)
+        return mpi_errno;
+
+    mpi_errno = PMPI_Win_flush(GADPT_LNTF_GHOST_RANK, gadpt_l2_cache_region.win);
+    if (mpi_errno != MPI_SUCCESS)
+        return mpi_errno;
+
+    return mpi_errno;
+}
 
 static inline void gadpt_gsync_reset(void)
 {
@@ -222,19 +262,17 @@ static int gadpt_gsync_issue(void)
 
     memset(gsync_user_stats, 0, num_all_stats * sizeof(int));
 
-    mpi_errno = PMPI_Win_lock(MPI_LOCK_SHARED, GADPT_LNTF_GHOST_RANK, 0, gadpt_l2_cache_region.win);
-
     /* read state.
      * Note that we store states by rank in cache (rank can be non-contiguous in odd_even),
      * but in exchange buffer, we put the states by node. */
-    for (i = 0; i < num_local_stats; i++) {
-        int user_rank = gsync_user_ranks[my_stats_disp + i];
-        gsync_user_stats[my_stats_disp + i] = shm_global_stats_ptr[user_rank];
-    }
-
-    mpi_errno = PMPI_Win_unlock(GADPT_LNTF_GHOST_RANK, gadpt_l2_cache_region.win);
+    mpi_errno = gadpt_atomic_load_l2_cache();
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
+
+    for (i = 0; i < num_local_stats; i++) {
+        int user_rank = gsync_user_ranks[my_stats_disp + i];
+        gsync_user_stats[my_stats_disp + i] = shm_atomic_access_buf[user_rank];
+    }
 
     /* exchange */
     mpi_errno = gadpt_gsync_iallgatherv();
@@ -266,11 +304,6 @@ static int gadpt_gsync_progress(void)
             return mpi_errno;
 
         if (test_flag) {
-            mpi_errno = PMPI_Win_lock(MPI_LOCK_EXCLUSIVE, GADPT_LNTF_GHOST_RANK,
-                                      0, gadpt_l2_cache_region.win);
-            if (mpi_errno != MPI_SUCCESS)
-                goto fn_fail;
-
             /* write cache of local status
              * Note that we store states by rank in cache (rank can be non-contiguous in odd_even),
              * but in exchange buffer, we put the states by node. */
@@ -278,11 +311,11 @@ static int gadpt_gsync_progress(void)
                 int disp = stats_disps[i], j;
                 for (j = 0; j < stats_cnts[i]; j++) {   /*state on node i */
                     int user_rank = gsync_user_ranks[disp + j];
-                    shm_global_stats_ptr[user_rank] = gsync_user_stats[disp + j];
+                    shm_atomic_access_buf[user_rank] = gsync_user_stats[disp + j];
                 }
             }
 
-            mpi_errno = PMPI_Win_unlock(GADPT_LNTF_GHOST_RANK, gadpt_l2_cache_region.win);
+            mpi_errno = gadpt_atomic_store_l2_cache();
             if (mpi_errno != MPI_SUCCESS)
                 goto fn_fail;
 
@@ -543,12 +576,17 @@ static void gadpt_finalize(void)
     gadpt_gsync_complete();
 
     if (gadpt_l2_cache_region.win && gadpt_l2_cache_region.win != MPI_WIN_NULL) {
+        PMPI_Win_unlock(GADPT_LNTF_GHOST_RANK, gadpt_l2_cache_region.win);
         PMPI_Win_free(&gadpt_l2_cache_region.win);
     }
 
     gadpt_l2_cache_region.win = MPI_WIN_NULL;
     gadpt_l2_cache_region.base = NULL;
 
+    if (shm_atomic_access_buf) {
+        free(shm_atomic_access_buf);
+        shm_atomic_access_buf = NULL;
+    }
     if (stats_cnts) {
         free(stats_cnts);
         stats_cnts = NULL;
@@ -613,22 +651,24 @@ static int gadpt_init(void)
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
+    mpi_errno = PMPI_Win_lock(MPI_LOCK_SHARED, GADPT_LNTF_GHOST_RANK, MPI_MODE_NOCHECK,
+                              gadpt_l2_cache_region.win);
+    if (mpi_errno != MPI_SUCCESS)
+        goto fn_fail;
+
     CSPG_ADAPT_DBG_PRINT
         (" gadpt_init: allocated shm_reg %p, size %ld, num_local_stats %d, num_all_stats %d\n",
          gadpt_l2_cache_region.base, region_size, num_local_stats, num_all_stats);
 
+    /* temporary buffer for atomic access to shared cache. */
+    shm_atomic_access_buf = CSP_calloc(num_all_stats, sizeof(int));
+
     /* initialize asynchronous state in cache */
-    shm_global_stats_ptr = gadpt_l2_cache_region.base;
     init_async_stat = adpt_get_init_async_stat();
-
-    mpi_errno = PMPI_Win_lock(MPI_LOCK_SHARED, GADPT_LNTF_GHOST_RANK, 0, gadpt_l2_cache_region.win);
-    if (mpi_errno != MPI_SUCCESS)
-        goto fn_fail;
-
     for (i = 0; i < num_all_stats; i++)
-        shm_global_stats_ptr[i] = init_async_stat;
+        shm_atomic_access_buf[i] = init_async_stat;
 
-    mpi_errno = PMPI_Win_unlock(GADPT_LNTF_GHOST_RANK, gadpt_l2_cache_region.win);
+    mpi_errno = gadpt_atomic_store_l2_cache();
     if (mpi_errno != MPI_SUCCESS)
         goto fn_fail;
 
