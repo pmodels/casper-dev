@@ -65,7 +65,8 @@ void CSP_win_dump_async_config(MPI_Win win, const char *fname)
  * This call is also in by win_allocate.
  */
 int CSP_win_get_async_config_info(MPI_Info info, CSP_async_config * async_config,
-                                  int *set_config_flag, int *async_config_phases,
+                                  int *set_config_flag,
+                                  int *async_config_phases CSP_ATTRIBUTE((unused)),
                                   int *set_phases_flag)
 {
     int mpi_errno = MPI_SUCCESS;
@@ -193,9 +194,11 @@ int CSP_win_print_async_config(CSP_win * ug_win)
     return mpi_errno;
 
   fn_fail:
-    goto fn_exit;
+    CSP_ATTRIBUTE((unused))
+        goto fn_exit;
 }
 
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
 /* Update global asynchronous synchronization system when the asynchronous states
  * of window processes have been updated (i.e., in every win-collective call).
  * All processes update the local cache, only the root process on each node updates
@@ -239,6 +242,7 @@ int CSP_win_gsync_update(CSP_win * ug_win)
   fn_fail:
     goto fn_exit;
 }
+#endif
 
 /* Schedule asynchronous configuration in collective manner.
  * This routine is safe to be used in window collective calls, such as win_fence
@@ -332,5 +336,6 @@ int CSP_win_coll_sched_async_config(CSP_win * ug_win)
         free(tmp_gather_buf);
     return mpi_errno;
   fn_fail:
-    goto fn_exit;
+    CSP_ATTRIBUTE((unused))
+        goto fn_exit;
 }
