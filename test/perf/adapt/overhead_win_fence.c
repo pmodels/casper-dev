@@ -43,12 +43,12 @@ static void run_test(const char *config_val)
         MPI_Win_fence(0, win);
     }
     t1 = MPI_Wtime();
-    t_fence = (t1 - t0) / ITER;
+    t_fence = (t1 - t0) / ITER * 1000 * 1000;   /*us */
 
     if (rank == 0)
         fprintf(stdout, "%s%s, nproc %d config %s fence %lf\n",
 #ifdef ENABLE_CSP
-                "dac-", async_sched_level_str,
+                "csp-", async_sched_level_str,
 #else
                 "original", "",
 #endif

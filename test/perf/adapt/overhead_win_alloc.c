@@ -47,17 +47,17 @@ static void run_test(const char *info)
                          MPI_COMM_WORLD, &winbuf[x], &win[x]);
     }
     t1 = MPI_Wtime();
-    t_alloc = (t1 - t0) / ITER;
+    t_alloc = (t1 - t0) / ITER * 1000 * 1000;   /*us */
 
     for (x = 0; x < ITER; x++) {
         MPI_Win_free(&win[x]);
     }
-    t_free = (MPI_Wtime() - t1) / ITER;
+    t_free = (MPI_Wtime() - t1) / ITER * 1000 * 1000;   /*us */
 
     if (rank == 0)
         fprintf(stdout, "%s%s, nproc %d config %s allocate %lf free %lf\n",
 #ifdef ENABLE_CSP
-                "dac-", async_sched_level_str,
+                "csp-", async_sched_level_str,
 #else
                 "original", "",
 #endif
