@@ -311,7 +311,7 @@ static int gadpt_gsync_progress(void)
                 int disp = stats_disps[i], j;
                 for (j = 0; j < stats_cnts[i]; j++) {   /*state on node i */
                     int user_rank = gsync_user_ranks[disp + j];
-                    shm_atomic_access_buf[user_rank] = gsync_user_stats[disp + j];
+                    shm_atomic_access_buf[user_rank] = (CSP_async_stat) gsync_user_stats[disp + j];
                 }
             }
 

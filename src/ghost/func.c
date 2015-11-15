@@ -39,10 +39,12 @@ int CSPG_func_start(CSP_func * FUNC, int *user_local_root, int *user_nprocs, int
             if (mpi_errno != MPI_SUCCESS)
                 return mpi_errno;
 
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
             /* progress on global asynchronous status synchronization. */
             mpi_errno = CSPG_gadpt_sync();
             if (mpi_errno != MPI_SUCCESS)
                 return mpi_errno;
+#endif
         }
 
         CSPG_DBG_PRINT(" received Func start request from local rank %d\n", status.MPI_SOURCE);

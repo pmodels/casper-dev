@@ -192,10 +192,8 @@ typedef enum {
 
 typedef enum {
     CSP_ASYNC_CONFIG_ON = 0,
-    CSP_ASYNC_CONFIG_OFF = 1
-#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-        , CSP_ASYNC_CONFIG_AUTO = 2
-#endif
+    CSP_ASYNC_CONFIG_OFF = 1,
+    CSP_ASYNC_CONFIG_AUTO = 2
 } CSP_async_config;
 
 typedef enum {
@@ -1064,7 +1062,7 @@ static inline int CSP_gadpt_sync(void)
 #else
 #define CSP_adpt_sched_async_stat() {/*do nothing */}
 #define CSP_adpt_get_async_stat() {/*do nothing */}
-#define CSP_gadpt() {/*do nothing*/}
+#define CSP_gadpt_sync() {/*do nothing*/}
 #endif /* end of CSP_ENABLE_RUNTIME_ASYNC_SCHED */
 
 #define CSP_MPI_FUNC_START_ROUTINE() do {                 \
