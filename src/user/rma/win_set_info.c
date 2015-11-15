@@ -23,6 +23,12 @@ int MPI_Win_set_info(MPI_Win win, MPI_Info info)
         goto fn_exit;
     }
 
+    /* no additional info check for per-window adaptation, return */
+    if (CSP_ENV.async_sched_level < CSP_ASYNC_SCHED_PER_COLL) {
+        mpi_errno = PMPI_Win_set_info(win, info);
+        goto fn_exit;
+    }
+
     if (info != MPI_INFO_NULL) {
         int info_flag = 0;
         char info_value[MPI_MAX_INFO_VAL + 1];
@@ -39,7 +45,8 @@ int MPI_Win_set_info(MPI_Win win, MPI_Info info)
         }
     }
 
-    if (CSP_ENV.async_sched_level >= CSP_ASYNC_SCHED_PER_COLL) {
+    /* adaptation start */
+    {
         CSP_async_config async_config = ug_win->info_args.async_config;
         int async_config_phases = 0;    /* do nothing by default */
         int set_config_flag = 0, set_phases_flag = 0;
