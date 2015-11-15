@@ -49,39 +49,33 @@ static int local_dirty_flag = 0;
 static int dirty_notify_end_flag = 0;
 
 #ifdef CSP_ENABLE_ADAPT_PROF
-CSP_adapt_rma_prof ADAPT_RMA_PROF;
+CSP_adapt_op_counter ADAPT_PROF_CNT[CSP_ADPT_PROF_MAX];
+
+static const char *CSP_ADPT_PROF_NAME[CSP_ADPT_PROF_MAX] = {
+    "get" /*CSP_ADPT_PROF_GET */ ,
+    "put" /*CSP_ADPT_PROF_PUT */ ,
+    "acc" /*CSP_ADPT_PROF_ACC */ ,
+    "get_acc" /*CSP_ADPT_PROF_GET_ACC */ ,
+    "fop" /*CSP_ADPT_PROF_FOP */ ,
+    "cas"       /*CSP_ADPT_PROF_CAS */
+};
 
 static void adapt_prof_reset(void)
 {
-    ADAPT_RMA_PROF.put.to_ghost = ADAPT_RMA_PROF.put.to_user = 0;
-    ADAPT_RMA_PROF.get.to_ghost = ADAPT_RMA_PROF.get.to_user = 0;
-    ADAPT_RMA_PROF.acc.to_ghost = ADAPT_RMA_PROF.acc.to_user = 0;
-    ADAPT_RMA_PROF.get_acc.to_ghost = ADAPT_RMA_PROF.get_acc.to_user = 0;
-    ADAPT_RMA_PROF.fop.to_ghost = ADAPT_RMA_PROF.fop.to_user = 0;
-    ADAPT_RMA_PROF.cas.to_ghost = ADAPT_RMA_PROF.cas.to_user = 0;
+    int op = 0;
+    for (op = 0; op < CSP_ADPT_PROF_MAX; op++)
+        ADAPT_PROF_CNT[op].to_ghost = ADAPT_PROF_CNT[op].to_user = 0;
 }
 
 static void adapt_prof_dump(void)
 {
+    int op = 0;
     CSP_INFO_PRINT(4, "ADAPT rma profiling (op to user:ghost): ");
-    if (ADAPT_RMA_PROF.put.to_ghost > 0 || ADAPT_RMA_PROF.put.to_user > 0) {
-        CSP_INFO_PRINT(4, " put %d:%d, ", ADAPT_RMA_PROF.put.to_user, ADAPT_RMA_PROF.put.to_ghost);
-    }
-    if (ADAPT_RMA_PROF.get.to_ghost > 0 || ADAPT_RMA_PROF.get.to_user > 0) {
-        CSP_INFO_PRINT(4, " get %d:%d, ", ADAPT_RMA_PROF.get.to_user, ADAPT_RMA_PROF.get.to_ghost);
-    }
-    if (ADAPT_RMA_PROF.acc.to_ghost > 0 || ADAPT_RMA_PROF.acc.to_user > 0) {
-        CSP_INFO_PRINT(4, " acc %d:%d, ", ADAPT_RMA_PROF.acc.to_user, ADAPT_RMA_PROF.acc.to_ghost);
-    }
-    if (ADAPT_RMA_PROF.get_acc.to_ghost > 0 || ADAPT_RMA_PROF.get_acc.to_user > 0) {
-        CSP_INFO_PRINT(4, " get_acc %d:%d, ", ADAPT_RMA_PROF.get_acc.to_user,
-                       ADAPT_RMA_PROF.get_acc.to_ghost);
-    }
-    if (ADAPT_RMA_PROF.fop.to_ghost > 0 || ADAPT_RMA_PROF.fop.to_user > 0) {
-        CSP_INFO_PRINT(4, " fop %d:%d, ", ADAPT_RMA_PROF.fop.to_user, ADAPT_RMA_PROF.fop.to_ghost);
-    }
-    if (ADAPT_RMA_PROF.cas.to_ghost > 0 || ADAPT_RMA_PROF.cas.to_user > 0) {
-        CSP_INFO_PRINT(4, " cas %d:%d, ", ADAPT_RMA_PROF.cas.to_user, ADAPT_RMA_PROF.cas.to_ghost);
+    for (op = 0; op < CSP_ADPT_PROF_MAX; op++) {
+        if (ADAPT_PROF_CNT[op].to_ghost > 0 || ADAPT_PROF_CNT[op].to_user > 0) {
+            CSP_INFO_PRINT(4, " %s %d:%d, ", CSP_ADPT_PROF_NAME[op],
+                           ADAPT_PROF_CNT[op].to_user, ADAPT_PROF_CNT[op].to_ghost);
+        }
     }
     CSP_INFO_PRINT(4, "\n");
 

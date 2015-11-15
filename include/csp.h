@@ -963,6 +963,27 @@ extern int CSP_win_get_async_config_info(MPI_Info info, CSP_async_config * async
 extern int CSP_win_coll_sched_async_config(CSP_win * ug_win);
 extern int CSP_win_gsync_update(CSP_win * ug_win);
 
+/* ------------------------------------------
+ * Op profiling in profiling-based adaptation.
+ * Note that the following routines are visible in both non adaptable and adaptable
+ * version, because we want to insert single line profiling command in every operation
+ * calls.
+ * ------------------------------------------ */
+typedef enum {
+    CSP_ADPT_PROF_GET,
+    CSP_ADPT_PROF_PUT,
+    CSP_ADPT_PROF_ACC,
+    CSP_ADPT_PROF_GET_ACC,
+    CSP_ADPT_PROF_FOP,
+    CSP_ADPT_PROF_CAS,
+    CSP_ADPT_PROF_MAX
+} CSP_adpt_prof_op;
+
+#ifndef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+#define CSP_ADAPT_PROF_INC_TO_USER_CNT(op)
+#define CSP_ADAPT_PROF_INC_TO_GHOST_CNT(op)
+#endif
+
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
 
 /* ------------------------------------------
@@ -985,21 +1006,13 @@ typedef struct {
     int to_ghost;
 } CSP_adapt_op_counter;
 
-typedef struct {
-    CSP_adapt_op_counter get;
-    CSP_adapt_op_counter put;
-    CSP_adapt_op_counter acc;
-    CSP_adapt_op_counter get_acc;
-    CSP_adapt_op_counter fop;
-    CSP_adapt_op_counter cas;
-} CSP_adapt_rma_prof;
-
 #ifdef CSP_ENABLE_ADAPT_PROF
-extern CSP_adapt_rma_prof ADAPT_RMA_PROF;
+extern CSP_adapt_op_counter ADAPT_PROF_CNT[CSP_ADPT_PROF_MAX];
 
-#define CSP_ADAPT_PROF_INC_TO_USER_CNT(op) {ADAPT_RMA_PROF.op.to_user++;}
-#define CSP_ADAPT_PROF_INC_TO_GHOST_CNT(op) {ADAPT_RMA_PROF.op.to_ghost++;}
+#define CSP_ADAPT_PROF_INC_TO_USER_CNT(op) {ADAPT_PROF_CNT[op].to_user++;}
+#define CSP_ADAPT_PROF_INC_TO_GHOST_CNT(op) {ADAPT_PROF_CNT[op].to_ghost++;}
 #else
+
 #define CSP_ADAPT_PROF_INC_TO_USER_CNT(op)
 #define CSP_ADAPT_PROF_INC_TO_GHOST_CNT(op)
 #endif

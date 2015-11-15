@@ -130,14 +130,14 @@ static int CSP_put_impl(const void *origin_addr, int origin_count,
         mpi_errno = PMPI_Put(origin_addr, origin_count, origin_datatype,
                              target->ug_rank, target_disp, target_count, target_datatype, *win_ptr);
 
-        CSP_ADAPT_PROF_INC_TO_USER_CNT(put);
+        CSP_ADAPT_PROF_INC_TO_USER_CNT(CSP_ADPT_PROF_PUT);
 
         CSP_DBG_PRINT("CASPER Put to (target %d, win 0x%x [%s]) \n",
                       target->ug_rank, *win_ptr, CSP_target_get_epoch_stat_name(target, ug_win));
         return mpi_errno;
     }
 
-    CSP_ADAPT_PROF_INC_TO_GHOST_CNT(put);
+    CSP_ADAPT_PROF_INC_TO_GHOST_CNT(CSP_ADPT_PROF_PUT);
 
 #ifdef CSP_ENABLE_LOCAL_LOCK_OPT
     if (target_rank == rank && ug_win->is_self_locked) {
