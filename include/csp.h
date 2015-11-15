@@ -770,7 +770,7 @@ static inline const char *CSP_target_get_epoch_stat_name(CSP_win_target * target
 
 #define CSP_get_async_level_name(async_level)                                   \
     (async_level == CSP_ASYNC_SCHED_PER_WIN) ? "per-win" :                      \
-            ((async_level == CSP_ASYNC_SCHED_PER_WIN) ? "per-coll" :            \
+            ((async_level == CSP_ASYNC_SCHED_PER_COLL) ? "per-coll" :            \
                     ((async_level == CSP_ASYNC_SCHED_ANYTIME) ? "anytime" : ""))
 
 extern char CSP_epoch_types_name[128];
