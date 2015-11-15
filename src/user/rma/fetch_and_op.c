@@ -96,7 +96,7 @@ static int CSP_fetch_and_op_impl(const void *origin_addr, void *result_addr,
     CSP_target_get_epoch_win(0, target, ug_win, win_ptr);
 
     /* If the target is async-off, directly send to the target via internal window. */
-    if (target->synced_async_stat == CSP_ASYNC_OFF) {
+    if (CSP_acc_async_disabled(target, ug_win)) {
         mpi_errno = PMPI_Fetch_and_op(origin_addr, result_addr, datatype,
                                       target->ug_rank, target_disp, op, *win_ptr);
 

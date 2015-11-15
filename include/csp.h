@@ -984,8 +984,31 @@ typedef enum {
 #define CSP_ADAPT_PROF_INC_TO_GHOST_CNT(op)
 #endif
 
+/* ------------------------------------------
+ * Per-operation asynchronous status check
+ * ------------------------------------------ */
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+/* For profiling-based adaptation modes, check per-window synced status or
+ * ghost-synced status for PUT/GET. */
+#define CSP_put_async_disabled(target, ug_win)                              \
+        ((CSP_ENV.async_sched_level < CSP_ASYNC_SCHED_ANYTIME &&            \
+                target->synced_async_stat == CSP_ASYNC_OFF) ||              \
+                (CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_ANYTIME &&    \
+                        CSP_gadpt_get_stat(target->user_world_rank) == CSP_ASYNC_OFF))
+#define CSP_get_async_disabled(target, ug_win)  CSP_put_async_disabled(target, ug_win)
 
+/* For profiling-based adaptation modes, check per-window
+ * synced status for ACC-like operations */
+#define CSP_acc_async_disabled(target, ug_win)  (target->synced_async_stat == CSP_ASYNC_OFF)
+
+#else
+/* for non-adaptation or user-guided modes, just check per-window synced status */
+#define CSP_acc_async_disabled(target, ug_win) (target->synced_async_stat == CSP_ASYNC_OFF)
+#define CSP_put_async_disabled(target, ug_win) CSP_acc_async_disabled(target, ug_win)
+#define CSP_get_async_disabled(target, ug_win) CSP_acc_async_disabled(target, ug_win)
+#endif
+
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
 /* ------------------------------------------
  * Local asynchronous scheduling routines
  * ------------------------------------------ */
