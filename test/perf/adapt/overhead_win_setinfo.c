@@ -14,7 +14,7 @@
  * adaptation modes. */
 
 #define SKIP 100
-#define ITER 10000
+#define ITER 500000
 #define WIN_SIZE 1024
 
 int rank, nprocs;
@@ -68,11 +68,6 @@ int main(int argc, char *argv[])
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    if (nprocs < 2) {
-        fprintf(stderr, "Please run using at least 2 processes\n");
-        goto exit;
-    }
-
     CTEST_perf_read_env("CSP_ASYNC_SCHED_LEVEL", "per-win", &async_sched_level_str);
     CTEST_perf_read_env("CPERF_INFO_ASYNC_CONFIG", "on", &cperf_info_async_config);
 
@@ -89,7 +84,6 @@ int main(int argc, char *argv[])
     MPI_Barrier(MPI_COMM_WORLD);
     run_test(cperf_info_async_config);
 
-  exit:
     if (win_info != MPI_INFO_NULL)
         MPI_Info_free(&win_info);
     if (locbuf)

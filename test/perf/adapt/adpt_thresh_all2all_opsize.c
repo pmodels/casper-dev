@@ -5,13 +5,17 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <mpi.h>
 
 /* This benchmark evaluates the threshold that benefiting from asynchronous
  * progress in passive all to all communication with increasing size of operations.
- * Every one performs lockall-RMA-flush-compute-unlockall.*/
+ * Every one performs lockall-RMA-flush-compute-unlockall.
+ *
+ * It should run with per-coll level adaptation, to ensure both on/off use AM for
+ * local processes.*/
 
 #define SLEEP_TIME 100  //us
 #define SKIP 100
@@ -59,7 +63,7 @@ static void set_iter(int opsize)
         ITER = ITER_LL;
     }
 
-    if(opsize > 16384){ /* 128K */
+    if (opsize > 16384) {       /* 128K */
         ITER = 100;
     }
 }
@@ -121,6 +125,7 @@ static void run_with_async_config(const char *config, int time, int nop, int ops
     MPI_Info_create(&win_info);
     MPI_Info_set(win_info, (char *) "epoch_type", (char *) "lockall");
     MPI_Info_set(win_info, (char *) "async_config", config);
+/*    MPI_Info_set(win_info, (char *) "alloc_shm", "true"); */
 
     // size in byte
     MPI_Win_allocate(sizeof(double) * nop * opsize, sizeof(double), win_info,
@@ -165,7 +170,6 @@ static void run_with_async_config(const char *config, int time, int nop, int ops
 
 int main(int argc, char *argv[])
 {
-    int i;
     int time = SLEEP_TIME;
     int nop = NOP;
     int opsize = OPSIZE;
