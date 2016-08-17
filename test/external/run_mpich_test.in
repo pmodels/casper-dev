@@ -1,0 +1,97 @@
+#!/bin/bash
+
+path=$(pwd)
+CSP_LIB_DIR=@LIBDIR@
+CSP_LIB=$CSP_LIB_DIR/libcasper.so
+simple_test=
+
+usage="Usage:
+      export MPITEST_PROGRAM_WRAPPER=<-f hostfile>
+      export MPIEXEC=<mpiexec>
+      export TEST_PATH=<mpich_test_mpi_dir>
+      export SIMPLE_TEST=<pt2pt/sendrecv1>
+      ./run_mpich_test"
+
+if [ "x$MPIEXEC" = "x" ]; then
+    echo "MPIEXEC is undefined"
+    echo "$usage"
+    exit
+fi
+
+if [ "x$TEST_PATH" = "x" ]; then
+    echo "TEST_PATH is undefined"
+    echo "$usage"
+    exit
+fi
+
+if [ "x$SIMPLE_TEST" = "x" ]; then
+    echo "SIMPLE_TEST is undefined"
+    echo "$usage"
+    exit
+fi
+simple_test=$TEST_PATH/$SIMPLE_TEST
+
+if [ ! -d $TEST_PATH ]; then
+    echo "$TEST_PATH is not a directory."
+    echo "$usage"
+    exit
+fi
+
+if [ ! -f $simple_test ]; then
+    echo "Simple Test $simple_test does not exist."
+    echo "$usage"
+    exit
+fi
+
+if [ ! -f $CSP_LIB ]; then
+    echo "$CSP_LIB does not exist."
+    echo "Please check configure scripts"
+    exit
+fi
+
+export LD_PRELOAD=$CSP_LIB
+
+function exec_program()
+{
+  np=4
+  ng=$1
+
+  export CSP_NG=$ng
+  echo "testing $TEST_PATH with -ng $ng ..."
+
+  # always check whether Casper is successfully linked into program
+  export CSP_VERBOSE=1
+  exec 5>&1
+  output=$($MPIEXEC -np $np $simple_test | tee /dev/fd/5 )
+  rs="$(echo $output | grep "CSP_NG = $ng"  --count)"
+  if [ $rs != 1 ];then
+      echo "Casper link failed !"
+      echo $output
+      exit
+  fi
+  unset CSP_VERBOSE
+
+  export MPITEST_EXTRA_NP=$ng
+  make testing V=1
+}
+
+function check_mpich_patch()
+{
+    echo "Checking if $TEST_PATH/runtests includes MPITEST_EXTRA_NP environment varibale..."
+    rs=$(cat $TEST_PATH/runtests | grep MPITEST_EXTRA_NP --count)
+    if [ "$rs" -lt "1" ];then
+        echo "Does not exist ! Pleaes add the patch into runtests"
+        exit
+    fi
+}
+
+cd $TEST_PATH
+check_mpich_patch
+
+ng=1
+exec_program $ng
+
+ng=2
+exec_program $ng
+
+echo "all done"

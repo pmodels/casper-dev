@@ -1,0 +1,92 @@
+#!/bin/bash
+
+path=$(pwd)
+CSP_LIB_DIR=@LIBDIR@
+CSP_LIB=$CSP_LIB_DIR/libcasper.so
+simple_test=
+
+usage="Usage:
+       export MPIEXEC=<mpiexec -f hostfile>
+       export TEST_PATH=<armcimpi_build_dir>
+       export SIMPLE_TEST=<tests/test_accs> 
+       ./run_armcimpi_test"
+
+if [ "x$MPIEXEC" = "x" ]; then
+    echo "MPIEXEC is undefined"
+    echo "$usage"
+    exit
+fi
+
+if [ "x$TEST_PATH" = "x" ]; then
+    echo "TEST_PATH is undefined"
+    echo "$usage"
+    exit
+fi
+
+if [ "x$SIMPLE_TEST" = "x" ]; then
+    echo "SIMPLE_TEST is undefined"
+    echo "$usage"
+    exit
+fi
+simple_test=$TEST_PATH/$SIMPLE_TEST
+
+if [ ! -d $TEST_PATH ]; then
+    echo "$TEST_PATH is not a directory."
+    echo "$usage"
+    exit
+fi
+
+if [ ! -f $simple_test ]; then
+    echo "$simple_test does not exist."
+    echo "$usage"
+fi
+
+if [ ! -f $CSP_LIB ]; then
+    echo "$CSP_LIB does not exist."
+    echo "Please check configure scripts"
+fi
+
+export LD_PRELOAD=$CSP_LIB
+
+function exec_program()
+{
+  np=$1
+  ng=$2
+
+  export CSP_NG=$ng
+  echo "testing -np $np -ng $ng ..."
+
+  # always check whether Casper is successfully linked into program
+  export CSP_VERBOSE=1
+  exec 5>&1
+  output=$($MPIEXEC -np $np $simple_test | tee /dev/fd/5 )
+  rs="$(echo $output | grep "CSP_NG = $ng"  --count)"
+  if [ $rs != 1 ];then
+      echo "Casper link failed !"
+      echo $output
+      exit
+  fi
+  unset CSP_VERBOSE
+
+  make check MPIEXEC="$MPIEXEC -np $np"
+}
+
+cd $TEST_PATH
+
+np=4
+ng=1
+exec_program $np $ng
+
+np=8
+ng=1
+exec_program $np $ng
+
+np=8
+ng=2
+exec_program $np $ng
+
+np=10
+ng=2
+exec_program $np $ng
+
+echo "all done"

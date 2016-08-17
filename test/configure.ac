@@ -49,10 +49,18 @@ AC_CHECK_TYPES([cpu_set_t],,,[[#include <sched.h>]])
 # check for attribute support
 PAC_C_GNU_ATTRIBUTE
 
+# Pass libdir to test scripts to enable dynamic linking
+LIBDIR=$prefix/lib
+AC_SUBST(LIBDIR)
+
 AC_CONFIG_FILES([Makefile])
 AC_CONFIG_FILES([perf/Makefile])
 AC_CONFIG_FILES([testlist])
 AC_CONFIG_FILES([runtest])
 AC_OUTPUT_COMMANDS([chmod a+x runtest])
+AC_CONFIG_FILES([external/run_armcimpi_test])
+AC_OUTPUT_COMMANDS([chmod a+x external/run_armcimpi_test])
+AC_CONFIG_FILES([external/run_mpich_test])
+AC_OUTPUT_COMMANDS([chmod a+x external/run_mpich_test])
 
 AC_OUTPUT
