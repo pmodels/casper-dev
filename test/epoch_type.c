@@ -550,10 +550,9 @@ int main(int argc, char *argv[])
         goto exit;
 
   exit:
+    if (rank == 0)
+        CTEST_report_result(errs);
 
-    if (rank == 0) {
-        fprintf(stdout, "%d errors\n", errs);
-    }
     if (locbuf)
         free(locbuf);
     if (checkbuf)

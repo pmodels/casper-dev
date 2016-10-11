@@ -22,8 +22,26 @@
 #endif
 #endif /* CTEST_ATTRIBUTE */
 
-/* Generic functions for double test data */
 
+/* ==========================================
+ * Generic routines
+ * ========================================== */
+
+static inline void CTEST_report_result(int errs)
+{
+    if (errs == 0) {
+        fprintf(stdout, "PASS\n");
+        fflush(stdout);
+    }
+    else {
+        fprintf(stdout, "%d errors\n", errs);
+        fflush(stdout);
+    }
+}
+
+/* ==========================================
+ * Generic functions for double test data
+ * ========================================== */
 #define DOUBLE_TOLERANCE (0.00001)
 
 /* Precise double comparison
