@@ -37,6 +37,11 @@ CSP_async_stat CSP_adpt_get_async_stat(void)
     return CSP_MY_ASYNC_STAT;
 }
 
+#ifdef NWCHEM_ADAPT_TPI_DBG
+extern void tpi_dbg_print_file_(const char *text);
+extern int dbg_print_file_opened;
+#endif
+
 /* Schedule local asynchronous status.*/
 CSP_async_stat CSP_adpt_sched_async_stat(void)
 {
@@ -66,6 +71,17 @@ CSP_async_stat CSP_adpt_sched_async_stat(void)
     CSP_ADAPT_DBG_PRINT(" my async stat: freq=%d(%.4f/%.4f), %s->%s\n",
                         freq, CSP_RM[CSP_RM_COMM_FREQ].time, interval, old_stat_name,
                         CSP_get_target_async_stat_name(CSP_MY_ASYNC_STAT));
+#ifdef NWCHEM_ADAPT_TPI_DBG
+    if (dbg_print_file_opened == 1) {
+        char temp_str[512];
+        memset(temp_str, 0, sizeof(temp_str));
+        strncpy(old_stat_name, CSP_get_target_async_stat_name(old_stat), 16);
+        sprintf(temp_str, " my async stat: freq=%d(%.4f/%.4f), %s->%s",
+                freq, CSP_RM[CSP_RM_COMM_FREQ].time, interval, old_stat_name,
+                CSP_get_target_async_stat_name(CSP_MY_ASYNC_STAT));
+        tpi_dbg_print_file_((const char *) temp_str);
+    }
+#endif
 
     CSP_RM[CSP_RM_COMM_FREQ].last_time = CSP_RM[CSP_RM_COMM_FREQ].time;
     CSP_RM[CSP_RM_COMM_FREQ].last_interval = interval;
