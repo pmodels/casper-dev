@@ -72,7 +72,7 @@ static void usleep_by_count(unsigned long us)
 static int check_error(void)
 {
     int err = 0;
-    int d1, d2, d3 ;
+    int d1, d2, d3;
 
     MPI_Get(checkbuf, BUFSIZE, MPI_DOUBLE, rank, 0, 1, target_type, win);
     MPI_Win_flush(rank, win);
@@ -106,6 +106,7 @@ static int check_error(void)
             printf("\n");
         }
     }
+    return err;
 }
 #endif
 

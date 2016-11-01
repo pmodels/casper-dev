@@ -17,6 +17,8 @@ noinst_PROGRAMS = \
 	adpt_phase_pcoll_nop_get	\
 	csp_adpt_phase_pcoll_nop_get	\
 	csp_adpt_u_phase_pcoll_nop_get	\
+	static_single_phase_acc	\
+	csp_static_single_phase_acc	\
 	csp_adpt_thresh_all2all_nop_put	\
 	csp_adpt_thresh_all2all_nop_get	\
 	csp_adpt_thresh_all2all_nop_acc	\
@@ -40,29 +42,31 @@ csp_overhead_win_setinfo_LDFLAGS= -Wl,-rpath -Wl,$(libdir)
 csp_overhead_win_setinfo_LDADD= -L$(libdir) -lcasper 
 
 adpt_phase_pcoll_nop_acc_SOURCES= adpt_phase_pcoll_nop.c
-adpt_phase_pcoll_nop_acc_CFLAGS= -O2 -DTEST_RMA_OP_ACC
+adpt_phase_pcoll_nop_acc_CFLAGS= -O2 -DTEST_RMA_OP_ACC -mkl=sequential
+adpt_phase_pcoll_nop_acc_LDFLAGS= -mkl=sequential
 
 csp_adpt_phase_pcoll_nop_acc_SOURCES= adpt_phase_pcoll_nop.c
-csp_adpt_phase_pcoll_nop_acc_CFLAGS= -O2 -DENABLE_CSP -DTEST_RMA_OP_ACC
-csp_adpt_phase_pcoll_nop_acc_LDFLAGS= -Wl,-rpath -Wl,$(libdir) 
+csp_adpt_phase_pcoll_nop_acc_CFLAGS= -O2 -DENABLE_CSP -DTEST_RMA_OP_ACC -mkl=sequential
+csp_adpt_phase_pcoll_nop_acc_LDFLAGS= -Wl,-rpath -Wl,$(libdir) -mkl=sequential
 csp_adpt_phase_pcoll_nop_acc_LDADD= -L$(libdir) -lcasper 
 
 csp_adpt_u_phase_pcoll_nop_acc_SOURCES= adpt_phase_pcoll_nop.c
-csp_adpt_u_phase_pcoll_nop_acc_CFLAGS= -O2 -DENABLE_CSP_ADPT_U -DTEST_RMA_OP_ACC
-csp_adpt_u_phase_pcoll_nop_acc_LDFLAGS= -Wl,-rpath -Wl,$(libdir) 
+csp_adpt_u_phase_pcoll_nop_acc_CFLAGS= -O2 -DENABLE_CSP_ADPT_U -DTEST_RMA_OP_ACC -mkl=sequential
+csp_adpt_u_phase_pcoll_nop_acc_LDFLAGS= -Wl,-rpath -Wl,$(libdir) -mkl=sequential
 csp_adpt_u_phase_pcoll_nop_acc_LDADD= -L$(libdir) -lcasper 
 
 adpt_phase_pcoll_nop_get_SOURCES= adpt_phase_pcoll_nop.c
-adpt_phase_pcoll_nop_get_CFLAGS= -O2 -DTEST_RMA_OP_GET
+adpt_phase_pcoll_nop_get_CFLAGS= -O2 -DTEST_RMA_OP_GET -mkl=sequential
+adpt_phase_pcoll_nop_get_LDFLAGS= -mkl=sequential
 
 csp_adpt_phase_pcoll_nop_get_SOURCES= adpt_phase_pcoll_nop.c
-csp_adpt_phase_pcoll_nop_get_CFLAGS= -O2 -DENABLE_CSP -DTEST_RMA_OP_GET
-csp_adpt_phase_pcoll_nop_get_LDFLAGS= -Wl,-rpath -Wl,$(libdir) 
+csp_adpt_phase_pcoll_nop_get_CFLAGS= -O2 -DENABLE_CSP -DTEST_RMA_OP_GET -mkl=sequential
+csp_adpt_phase_pcoll_nop_get_LDFLAGS= -Wl,-rpath -Wl,$(libdir) -mkl=sequential
 csp_adpt_phase_pcoll_nop_get_LDADD= -L$(libdir) -lcasper 
 
 csp_adpt_u_phase_pcoll_nop_get_SOURCES= adpt_phase_pcoll_nop.c
-csp_adpt_u_phase_pcoll_nop_get_CFLAGS= -O2 -DENABLE_CSP_ADPT_U -DTEST_RMA_OP_GET
-csp_adpt_u_phase_pcoll_nop_get_LDFLAGS= -Wl,-rpath -Wl,$(libdir) 
+csp_adpt_u_phase_pcoll_nop_get_CFLAGS= -O2 -DENABLE_CSP_ADPT_U -DTEST_RMA_OP_GET -mkl=sequential
+csp_adpt_u_phase_pcoll_nop_get_LDFLAGS= -Wl,-rpath -Wl,$(libdir) -mkl=sequential
 csp_adpt_u_phase_pcoll_nop_get_LDADD= -L$(libdir) -lcasper 
 
 csp_adpt_thresh_all2all_nop_get_SOURCES= adpt_thresh_all2all_nop.c
@@ -94,3 +98,12 @@ csp_adpt_thresh_all2all_opsize_acc_SOURCES= adpt_thresh_all2all_opsize.c
 csp_adpt_thresh_all2all_opsize_acc_CFLAGS= -O2 -DENABLE_CSP -DTEST_RMA_OP_ACC
 csp_adpt_thresh_all2all_opsize_acc_LDFLAGS= -Wl,-rpath -Wl,$(libdir) 
 csp_adpt_thresh_all2all_opsize_acc_LDADD= -L$(libdir) -lcasper 
+
+static_single_phase_acc_SOURCES= static_single_phase.c
+static_single_phase_acc_CFLAGS= -O2 -DTEST_RMA_OP_ACC -mkl=sequential
+static_single_phase_acc_LDFLAGS= -mkl=sequential
+
+csp_static_single_phase_acc_SOURCES= static_single_phase.c
+csp_static_single_phase_acc_CFLAGS= -O2 -DTEST_RMA_OP_ACC -DENABLE_CSP -mkl=sequential
+csp_static_single_phase_acc_LDFLAGS= -Wl,-rpath -Wl,$(libdir) -mkl=sequential
+csp_static_single_phase_acc_LDADD= -L$(libdir) -lcasper 

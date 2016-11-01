@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <mpi.h>
+#include <mkl.h>
 
 /* This benchmark measures adaptation for the execution contains multiple
  * communication-intensive phases and computation-intensive phases with 3D
@@ -17,9 +18,9 @@
  * -During each phase, multiple collective calls (win_set_info) exist;
  * -Between two collective calls, every process performs all-to-all
  *  RMA-flush-compute-RMA-flush-barrier, with fixed computing time and increasing
- *  number of operations. The computation intensive phase runs with larger computing
- *  time and a small number of operations; the communication intensive phase runs
- *  with small computing time and increasing number of operations.
+ *  number of operations. The computation intensive phase runs with larger dgemm
+ *  and a small number of operations; the communication intensive phase runs
+ *  with small dgemm and increasing number of operations.
  *
  * It generates following modes :
  * - no adaptation (static on of off)
@@ -58,21 +59,65 @@ const char *op_name = "acc";
 #endif
 
 int NOP_L_MAX = 16, NOP_L_MIN = 16, NOP_L_ITER = 2, NOP_S = 1, NOP_L = 1;
-unsigned long SLEEP_TIME_S = 1, SLEEP_TIME_L = 100;     /* us */
+int MS = 1, ML = 100;
 
 MPI_Datatype target_type = MPI_DATATYPE_NULL;
 int target_size = 0;
 MPI_Aint target_ext = 0;
 
-static int target_computation(unsigned long us)
+double *A, *B, *C;
+int m, n, k;                    /* local size */
+double t_comp = 0.0;
+
+static void target_computation_init(void)
 {
-    double start = MPI_Wtime() * 1000 * 1000;
+    /* allocate max size with alignment on 64-byte boundary for better performance */
+    A = (double *) mkl_malloc(ML * ML * sizeof(double), 64);
+    B = (double *) mkl_malloc(ML * ML * sizeof(double), 64);
+    C = (double *) mkl_malloc(ML * ML * sizeof(double), 64);
+}
 
-    if (us == 0)
-        return 0;
+static void target_computation_set_size(int M, int K, int N)
+{
+    m = M / nprocs;
+    k = K / nprocs;
+    n = N / nprocs;
+}
 
-    while (MPI_Wtime() * 1000 * 1000 - start < us);
-    return 0;
+static void target_computation(void)
+{
+    int i, j;
+    double alpha = 1.0, beta = 0.0;
+    double t0;
+
+    t0 = MPI_Wtime();
+
+    if (m > 0 && k > 0 && n > 0) {
+        /* reset data */
+        for (i = 0; i < (m * k); i++)
+            A[i] = (double) (i + 1);
+
+        for (i = 0; i < (k * n); i++)
+            B[i] = (double) (-i - 1);
+
+        for (i = 0; i < (m * n); i++)
+            C[i] = 0.0;
+
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
+                    m, n, k, alpha, A, k, B, n, beta, C, n);
+    }
+
+    t_comp += MPI_Wtime() - t0;
+}
+
+static void target_computation_destroy(void)
+{
+    mkl_free(A);
+    mkl_free(B);
+    mkl_free(C);
+    A = NULL;
+    B = NULL;
+    C = NULL;
 }
 
 #if defined(TEST_RMA_OP_GET)
@@ -94,8 +139,7 @@ static int run_iteration()
     int i, wx, cx, px, x, nwin, nphase, ncoll, errs = 0;
     int dst;
     int nop = NOP_S;
-    unsigned long sleep_time = SLEEP_TIME_S;
-    double t0, avg_total_time = 0.0, t_total = 0.0;
+    double t0, avg_total_time = 0.0, t_total = 0.0, avg_t_comp = 0.0;
     MPI_Info win_info = MPI_INFO_NULL;
     MPI_Info async_info = MPI_INFO_NULL;
     double st0 = 0.0, t_comm_phase = 0.0, t_comp_phase = 0.0;
@@ -155,7 +199,7 @@ static int run_iteration()
             st0 = MPI_Wtime();
 
             if (px % 2 == 0) {  /* heavy comp */
-                sleep_time = SLEEP_TIME_L;
+                target_computation_set_size(ML, ML, ML);
                 nop = NOP_S;
                 comp_pcnt++;
 #if defined(ENABLE_CSP_ADPT_U)
@@ -163,7 +207,7 @@ static int run_iteration()
 #endif
             }
             else {      /* heavy comm */
-                sleep_time = SLEEP_TIME_S;
+                target_computation_set_size(MS, MS, MS);
                 nop = NOP_L;
                 comm_pcnt++;
 #if defined(ENABLE_CSP_ADPT_U)
@@ -183,7 +227,7 @@ static int run_iteration()
                         }
                     }
 
-                    target_computation(sleep_time);
+                    target_computation();
 
                     for (dst = 0; dst < nprocs; dst++) {
                         MPI_RMA_OP(x, dst, i);
@@ -206,22 +250,21 @@ static int run_iteration()
         MPI_Win_free(&win);
     }
 
-    t_total = (MPI_Wtime() - t0) * 1000;        /*ms */
-    t_comp_phase = t_comp_phase * 1000;
-    t_comm_phase = t_comm_phase * 1000;
+    t_total = (MPI_Wtime() - t0);       /* s */
 
     MPI_Reduce(&t_total, &avg_total_time, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
     MPI_Reduce(&t_comp_phase, &avg_t_comp_phase, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
     MPI_Reduce(&t_comm_phase, &avg_t_comm_phase, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&t_comp, &avg_t_comp, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
     if (rank == 0) {
         char header[256];
 
         memset(header, 0, sizeof(header));
-        avg_total_time = avg_total_time / nprocs;       /* us */
-        avg_t_comp_phase = avg_t_comp_phase / nprocs;   /* us */
-        avg_t_comm_phase = avg_t_comm_phase / nprocs;   /* us */
-
+        avg_total_time = avg_total_time / nprocs;
+        avg_t_comp_phase = avg_t_comp_phase / nprocs;
+        avg_t_comm_phase = avg_t_comm_phase / nprocs;
+        avg_t_comp = avg_t_comp / nprocs;
 #ifdef ENABLE_CSP
         const char *nh = getenv("CSP_NG");
         const char *gasync = getenv("CSP_ASYNC_CONFIG");
@@ -256,10 +299,10 @@ static int run_iteration()
 #endif
 
         fprintf(stdout,
-                "%s: nprocs %d sleep_s %lu sleep_l %lu num_op_s %d num_op_l %d "
+                "%s: nprocs %d MS %d %d ML %d %d comp %.2lf num_op_s %d num_op_l %d "
                 "total_time %.2lf comp-p %.2lf comm-p %.2lf nwin %d nphase %d ncoll %d\n",
-                header, nprocs, SLEEP_TIME_S, SLEEP_TIME_L, NOP_S, NOP_L, avg_total_time,
-                avg_t_comp_phase, avg_t_comm_phase, nwin, nphase, ncoll);
+                header, nprocs, MS, MS / nprocs, ML, ML / nprocs, avg_t_comp, NOP_S, NOP_L,
+                avg_total_time, avg_t_comp_phase, avg_t_comm_phase, nwin, nphase, ncoll);
     }
 
     MPI_Info_free(&win_info);
@@ -286,16 +329,11 @@ static void create_datatype(void)
 
 int main(int argc, char *argv[])
 {
-    MPI_Comm shm_comm = MPI_COMM_NULL;
     int i;
 
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-    MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL, &shm_comm);
-    MPI_Comm_rank(shm_comm, &shm_rank);
-    MPI_Comm_size(shm_comm, &shm_nprocs);
 
     if (nprocs < 2) {
         fprintf(stderr, "Please run using at least two processes\n");
@@ -309,8 +347,8 @@ int main(int argc, char *argv[])
         NOP_L_ITER = atoi(argv[4]);
     }
     if (argc >= 6) {
-        SLEEP_TIME_S = atoi(argv[5]);
-        SLEEP_TIME_L = atoi(argv[6]);
+        MS = atoi(argv[5]);
+        ML = atoi(argv[6]);
     }
 
     /* initialize local buffer */
@@ -318,6 +356,7 @@ int main(int argc, char *argv[])
     for (i = 0; i < BUFSIZE; i++)
         locbuf[i] = i;
 
+    target_computation_init();
     create_datatype();
 
     for (NOP_L = NOP_L_MIN; NOP_L <= NOP_L_MAX; NOP_L *= NOP_L_ITER) {
@@ -325,8 +364,7 @@ int main(int argc, char *argv[])
     }
 
   exit:
-    if (shm_comm)
-        MPI_Comm_free(&shm_comm);
+    target_computation_destroy();
     MPI_Type_free(&target_type);
     free(locbuf);
     MPI_Finalize();
