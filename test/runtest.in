@@ -1,4 +1,4 @@
-#!/bin/bash
+#! /usr/bin/env bash
 
 ENABLE_DA_TEST=@ENABLE_DA_TEST@
 path=$(pwd)
