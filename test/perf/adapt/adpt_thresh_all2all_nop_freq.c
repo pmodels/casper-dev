@@ -89,8 +89,13 @@ static double run_test(int nop)
     for (x = 0; x < SKIP; x++) {
         for (dst = 0; dst < nprocs; dst++) {
             ISSUE_RMA_OP(locbuf, bufsize, MPI_DOUBLE, dst, 0, 1, target_type, win);
+#if !defined(TEST_RMA_FLUSH_ALL)
             MPI_Win_flush(dst, win);
+#endif
         }
+#if defined(TEST_RMA_FLUSH_ALL)
+        MPI_Win_flush_all(win);
+#endif
     }
     MPI_Barrier(MPI_COMM_WORLD);
 
@@ -98,17 +103,27 @@ static double run_test(int nop)
     for (x = 0; x < ITER; x++) {
         for (dst = 0; dst < nprocs; dst++) {
             ISSUE_RMA_OP(locbuf, bufsize, MPI_DOUBLE, dst, 0, 1, target_type, win);
+#if !defined(TEST_RMA_FLUSH_ALL)
             MPI_Win_flush(dst, win);
+#endif
         }
+#if defined(TEST_RMA_FLUSH_ALL)
+        MPI_Win_flush_all(win);
+#endif
 
         usleep_by_count(comp_time);
 
         for (dst = 0; dst < nprocs; dst++) {
             for (i = 0; i < nop; i++) {
                 ISSUE_RMA_OP(locbuf, bufsize, MPI_DOUBLE, dst, 0, 1, target_type, win);
+#if !defined(TEST_RMA_FLUSH_ALL)
                 MPI_Win_flush(dst, win);
+#endif
             }
         }
+#if defined(TEST_RMA_FLUSH_ALL)
+        MPI_Win_flush_all(win);
+#endif
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
