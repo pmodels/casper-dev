@@ -30,7 +30,7 @@
 
 #ifdef ENABLE_CSP
 #include <casper.h>
-int CSP_NUM_G = 1;
+int CTEST_NG = 1;
 #endif
 
 double *winbuf = NULL;
@@ -129,10 +129,10 @@ static int run_test(int time)
     if (nprocs < NPROCS_M) {
         ITER = ITER_S;
     }
-    else if (nprocs >= NPROCS_M && nprocs < NPROCS_M * 2) {
+    else if (ITER > ITER_M && nprocs >= NPROCS_M && nprocs < NPROCS_M * 2) {
         ITER = ITER_M;
     }
-    else {
+    else if (ITER > ITER_L) {
         ITER = ITER_L;
     }
 
@@ -152,7 +152,7 @@ static int run_test(int time)
 #ifdef ENABLE_CSP
         fprintf(stdout,
                 "casper: %s iter %d comp_size %d num_op %d nprocs %d nh %d total_time %.2lf\n",
-                OP_TYPE_NM[OP_TYPE], ITER, time, NOP, nprocs, CSP_NUM_G, avg_total_time);
+                OP_TYPE_NM[OP_TYPE], ITER, time, NOP, nprocs, CTEST_NG, avg_total_time);
 #else
         const char *async_th = getenv("MPIR_CVAR_ASYNC_PROGRESS");
         int async_th_val = 0;
@@ -179,7 +179,7 @@ int main(int argc, char *argv[])
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 #ifdef ENABLE_CSP
-    CSP_ghost_size(&CSP_NUM_G);
+    CSP_ghost_size(&CTEST_NG);
 #endif
 
     debug_printf("[%d]init done, %d/%d\n", rank, rank, nprocs);
@@ -199,6 +199,9 @@ int main(int argc, char *argv[])
     }
     if (argc >= 6) {
         OP_TYPE = atoi(argv[5]);
+    }
+    if (argc >= 7) {
+        ITER = atoi(argv[6]);
     }
 
     if ((OP_TYPE != OP_ACC) && (OP_TYPE != OP_PUT) && (OP_TYPE != OP_GET)) {
