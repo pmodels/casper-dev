@@ -12,12 +12,9 @@
 #include <mpi.h>
 
 /* This benchmark evaluates the threshold that benefiting from asynchronous
- * progress in passive all to all communication with increasing number of operations,
- * this benchmark can be also used for the test with increasing number of processes.
+ * progress in passive all to N-nodes communication with increasing number of operations.
  * Every one performs lockall-RMA-compute-RMA-unlockall with 3D non-contigunous double target type.
- *
- * It should run with per-coll level adaptation, to ensure both on/off use AM for local
- * processes.*/
+ * The N can be specified at input. */
 
 #define SLEEP_TIME 100  //us
 #define SKIP 50
@@ -44,6 +41,9 @@ double *locbuf = NULL;
 int verbose = 1;
 int rank, nprocs;
 int ITER = ITER_S;
+int NNODES = 1;                 /* number of target nodes */
+int ntargets = 1;               /* dynamically calculated by NNODES */
+
 /* parameters can be updated by input */
 int comp_time = SLEEP_TIME;
 int nop_min = NOP, nop_max = NOP, nop_iter = 2;
@@ -60,6 +60,9 @@ const char *op_name = "acc";
 MPI_Datatype target_type = MPI_DATATYPE_NULL;
 int target_size = 0;
 MPI_Aint target_ext = 0;
+
+/* nprocs bits, set bit[x] to 1 if x is target */
+int *target_bits = NULL;
 
 static void usleep_by_count(unsigned long us)
 {
@@ -102,10 +105,12 @@ static double run_test(int nop)
     t0 = MPI_Wtime();
     for (x = 0; x < ITER; x++) {
         for (dst = 0; dst < nprocs; dst++) {
-            ISSUE_RMA_OP(locbuf, bufsize, MPI_DOUBLE, dst, 0, 1, target_type, win);
+            if (target_bits[dst] == 1) {
+                ISSUE_RMA_OP(locbuf, bufsize, MPI_DOUBLE, dst, 0, 1, target_type, win);
 #if !defined(TEST_RMA_FLUSH_ALL)
-            MPI_Win_flush(dst, win);
+                MPI_Win_flush(dst, win);
 #endif
+            }
         }
 #if defined(TEST_RMA_FLUSH_ALL)
         MPI_Win_flush_all(win);
@@ -114,11 +119,13 @@ static double run_test(int nop)
         usleep_by_count(comp_time);
 
         for (dst = 0; dst < nprocs; dst++) {
-            for (i = 0; i < nop; i++) {
-                ISSUE_RMA_OP(locbuf, bufsize, MPI_DOUBLE, dst, 0, 1, target_type, win);
+            if (target_bits[dst] == 1) {
+                for (i = 0; i < nop; i++) {
+                    ISSUE_RMA_OP(locbuf, bufsize, MPI_DOUBLE, dst, 0, 1, target_type, win);
 #if !defined(TEST_RMA_FLUSH_ALL)
-                MPI_Win_flush(dst, win);
+                    MPI_Win_flush(dst, win);
 #endif
+                }
             }
         }
 #if defined(TEST_RMA_FLUSH_ALL)
@@ -145,8 +152,8 @@ static double run_with_async_config(const char *config, int nop)
     MPI_Info_set(win_info, (char *) "epoch_type", (char *) "fence|lockall");
     MPI_Info_set(win_info, (char *) "async_config", config);
 
-    MPI_Win_allocate(sizeof(double) * WINSIZE, sizeof(double), win_info, MPI_COMM_WORLD, &winbuf,
-                     &win);
+    MPI_Win_allocate(sizeof(double) * WINSIZE, sizeof(double), win_info,
+                     MPI_COMM_WORLD, &winbuf, &win);
 
     /* reset window */
     MPI_Win_fence(MPI_MODE_NOPRECEDE, win);
@@ -195,7 +202,7 @@ static void create_datatype(void)
 /* report range */
 #define DIFF_REPORT 10.0
 /* stop after sufficient reports */
-#define MAX_NREPORTS 5
+#define MAX_NREPORTS 3
 
 static int nreports = 0;
 
@@ -203,12 +210,49 @@ static void inline report_output(int ng, int nop, double on_time, double diff)
 {
     if (rank == 0) {
         fprintf(stdout,
-                "csp-%s-ng%d: comp_time %d sub_dlen %d size %d nprocs %d nop %d total_time %.2lf diff %.2lf freq %.1f\n",
-                op_name, ng, comp_time, sub_dlen, target_size, nprocs, nop, on_time,
-                diff, (1 - comp_time / on_time) * 100 /*comm freq */);
+                "csp-%s-ng%d: comp_time %d sub_dlen %d size %d nprocs %d ntnodes %d ntargets %d nop %d total_time %.2lf diff %.2lf freq %.1f\n",
+                op_name, ng, comp_time, sub_dlen, target_size, nprocs, NNODES,
+                ntargets, nop, on_time, diff, (1 - comp_time / on_time) * 100 /*comm freq */);
         fflush(stdout);
     }
     nreports++;
+}
+
+static void set_target_bits(void)
+{
+    int shm_rank, shm_nprocs, node_id = 0;
+    int i;
+    MPI_Comm shm_comm = MPI_COMM_NULL, node_comm = MPI_COMM_NULL;
+
+    MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL, &shm_comm);
+    MPI_Comm_rank(shm_comm, &shm_rank);
+    MPI_Comm_size(shm_comm, &shm_nprocs);
+
+    /* first rank on every node gets node id */
+    MPI_Comm_split(MPI_COMM_WORLD, shm_rank == 0, shm_rank, &node_comm);
+    if (shm_rank == 0) {
+        MPI_Comm_rank(node_comm, &node_id);
+    }
+
+    MPI_Bcast(&node_id, 1, MPI_INT, 0, shm_comm);
+
+    if (node_id < NNODES) {
+        target_bits[rank] = 1;
+    }
+    else {
+        target_bits[rank] = 0;
+    }
+
+    MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, target_bits, 1, MPI_INT, MPI_COMM_WORLD);
+
+    /* count number of targets in world */
+    ntargets = 0;
+    for (i = 0; i < nprocs; i++) {
+        if (target_bits[i] == 1)
+            ntargets++;
+    }
+    MPI_Comm_free(&node_comm);
+    MPI_Comm_free(&shm_comm);
 }
 
 int main(int argc, char *argv[])
@@ -217,6 +261,7 @@ int main(int argc, char *argv[])
     int ng = 1;
     char *ng_str = "";
     double diff_report = DIFF_REPORT, diff_reduce_iter = DIFF_REDUCE_ITER;
+    int backwarded = 0;
 
     MPI_Init(&argc, &argv);
 
@@ -234,6 +279,9 @@ int main(int argc, char *argv[])
     if (argc >= 7) {
         ITER = atoi(argv[6]);
     }
+    if (argc >= 8) {
+        NNODES = atoi(argv[7]);
+    }
 
     ng_str = getenv("CSP_NG");
     if (ng_str != "") {
@@ -250,10 +298,15 @@ int main(int argc, char *argv[])
 
     if (comp_time < 1 || sub_dlen < 1 || sub_dlen > DLEN || ng < 1) {
         if (rank == 0)
-            fprintf(stderr, "Invalid input arguments: comp_time = %d, sub_dlen = %d, ng = %d\n",
+            fprintf(stderr,
+                    "Invalid input arguments: comp_time = %d, sub_dlen = %d, ng = %d\n",
                     comp_time, sub_dlen, ng);
         goto exit;
     }
+
+    target_bits = malloc(sizeof(int) * nprocs);
+    memset(target_bits, 0, sizeof(int) * nprocs);
+    set_target_bits();
 
     diff_report = DIFF_REPORT / (ng * 0.8);     /* reduce report range for large ng */
     diff_reduce_iter = (DIFF_REDUCE_ITER / (ng * 0.8)); /* similar for fine-grained adjusting range */
@@ -267,7 +320,7 @@ int main(int argc, char *argv[])
         locbuf[i] = i;
 
     nop = nop_min;
-    while (nop <= nop_max) {
+    while (nop <= nop_max && nop >= nop_min) {
         double on_time = 0, off_time = 0, diff = 0;
 
         MPI_Barrier(MPI_COMM_WORLD);
@@ -292,17 +345,36 @@ int main(int argc, char *argv[])
         }
 
         /* stop test */
-        if ((on_time > off_time && fabs(diff) >= diff_report)
+        if ((on_time > off_time && fabs(diff) >= diff_report && nreports > 0)
             || nreports > MAX_NREPORTS) {
             break;
         }
 
-        /* when diff becomes small, reduce interval */
-        if (diff < diff_reduce_iter) {
-            nop += nop_iter;
+        /* forwarding */
+        if (backwarded == 0) {
+            /* when diff becomes small or negative, reduce interval */
+            if (diff < diff_reduce_iter) {
+                /* when diff directly increases to negative with 0 report,
+                 * start backward with smaller interval. */
+                if (diff < 0 && nreports == 0) {
+                    nop -= 1;
+                    backwarded = 1;
+                }
+                else {
+                    nop += nop_iter;
+                }
+            }
+            else if (backwarded == 0) {
+                nop *= nop_iter;
+            }
         }
+        /* slightly increase diff in backward within range */
+        else if (diff < diff_reduce_iter) {
+            nop -= 1;
+        }
+        /* diff increases out of range in backward */
         else {
-            nop *= nop_iter;
+            break;
         }
 
         /* reduce iteration when single run becomes expensive (time in us) */
@@ -314,14 +386,16 @@ int main(int argc, char *argv[])
         }
     }
 
-    if (nop == nop_max) {
-        fprintf(stderr, "Cannot find the threshold. "
-                "Please adjust input arguments: comp_time %d, sub_dlen %d, nop_min %d, nop_max %d\n",
-                comp_time, sub_dlen, nop_min, nop_max);
+    if ((nop == nop_max || nreports == 0) && rank == 0) {
+        fprintf(stderr,
+                "Cannot find the threshold. "
+                "Please adjust input arguments: nprocs %d comp_time %d, sub_dlen %d, nop_min %d, nop_max %d\n",
+                nprocs, comp_time, sub_dlen, nop_min, nop_max);
         fflush(stderr);
     }
 
   exit:
+    free(target_bits);
     MPI_Type_free(&target_type);
     free(locbuf);
     MPI_Finalize();
