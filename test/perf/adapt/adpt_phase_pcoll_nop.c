@@ -17,7 +17,7 @@
  * -During the execution of each window, multiple phases exist;
  * -During each phase, multiple collective calls (win_set_info) exist;
  * -Between two collective calls, every process performs all-to-all
- *  RMA-flush-compute-RMA-flush-barrier, with fixed computing time and increasing
+ *  GET-flush-compute-ACC-flush-barrier, with fixed computing time and increasing
  *  number of operations. The computation intensive phase runs with larger dgemm
  *  and a small number of operations; the communication intensive phase runs
  *  with small dgemm and increasing number of operations.
@@ -30,11 +30,6 @@
  * - self-profiling based adaptation with ghost-synchronization.
  * */
 
-#define ITER 400
-#define WIN_ITER 200
-#define PHASE_ITER 100  /* change computation/communication proportion every 100 iteration */
-#define COLL_ITER 50    /* insert collective call every 50 iteration */
-#define SKIP 10
 
 #define DLEN 4
 #define SUB_DLEN 2
@@ -50,16 +45,9 @@ int rank = 0, nprocs = 0;
 int shm_rank = 0, shm_nprocs = 0;
 MPI_Win win = MPI_WIN_NULL;
 
-#if defined(TEST_RMA_OP_GET)
-const char *op_name = "get";
-#elif defined(TEST_RMA_OP_PUT)
-const char *op_name = "put";
-#else
-const char *op_name = "acc";
-#endif
-
+int PHASE_ITER = 10, COLL_ITER = 50, SKIP = 10, NWINS = 2;
 int NOP_L_MAX = 16, NOP_L_MIN = 16, NOP_L_ITER = 2, NOP_S = 1, NOP_L = 1;
-int MS = 1, ML = 100;
+int MS = 1, ML = 100;           /* total problem size */
 
 MPI_Datatype target_type = MPI_DATATYPE_NULL;
 int target_size = 0;
@@ -71,10 +59,14 @@ double t_comp = 0.0;
 
 static void target_computation_init(void)
 {
+    int ml;
+
     /* allocate max size with alignment on 64-byte boundary for better performance */
-    A = (double *) mkl_malloc(ML * ML * sizeof(double), 64);
-    B = (double *) mkl_malloc(ML * ML * sizeof(double), 64);
-    C = (double *) mkl_malloc(ML * ML * sizeof(double), 64);
+    ml = ML / nprocs;
+
+    A = (double *) mkl_malloc(ml * ml * sizeof(double), 64);
+    B = (double *) mkl_malloc(ml * ml * sizeof(double), 64);
+    C = (double *) mkl_malloc(ml * ml * sizeof(double), 64);
 }
 
 static void target_computation_set_size(int M, int K, int N)
@@ -120,35 +112,19 @@ static void target_computation_destroy(void)
     C = NULL;
 }
 
-#if defined(TEST_RMA_OP_GET)
-#define MPI_RMA_OP(x, dst, i) { \
-    MPI_Get(locbuf, BUFSIZE, MPI_DOUBLE, dst, 0, 1, target_type, win); \
-    }
-#elif defined(TEST_RMA_OP_PUT)
-#define MPI_RMA_OP(x, dst, i) { \
-    MPI_Put(locbuf, BUFSIZE, MPI_DOUBLE, dst, 0, 1, target_type, win); \
-    }
-#else
-#define MPI_RMA_OP(x, dst, i) { \
-    MPI_Accumulate(locbuf, BUFSIZE, MPI_DOUBLE, dst, 0, 1, target_type, MPI_SUM, win); \
-    }
-#endif
-
 static int run_iteration()
 {
-    int i, wx, cx, px, x, nwin, nphase, ncoll, errs = 0;
+    int i, wx, cx, px, x, errs = 0;
     int dst;
     int nop = NOP_S;
-    double t0, avg_total_time = 0.0, t_total = 0.0, avg_t_comp = 0.0;
     MPI_Info win_info = MPI_INFO_NULL;
     MPI_Info async_info = MPI_INFO_NULL;
-    double st0 = 0.0, t_comm_phase = 0.0, t_comp_phase = 0.0;
-    double avg_t_comp_phase = 0.0, avg_t_comm_phase = 0.0;
+    double t0, t_total = 0.0;
+    double st0 = 0.0, t_comm_phase = 0.0, t_comp_phase = 0.0, t_comm_comp = 0.0, t_comp_comp = 0.0;
+    /* min, max, avg */
+    double sum_total_times[3], sum_t_comm_comps[3], sum_t_comp_comps[3], sum_t_comp_phases[3],
+        sum_t_comm_phases[3];
     int comp_pcnt = 0, comm_pcnt = 0;
-
-    nwin = ITER / WIN_ITER;
-    nphase = WIN_ITER / PHASE_ITER;
-    ncoll = PHASE_ITER / COLL_ITER;
 
     MPI_Info_create(&win_info);
     MPI_Info_create(&async_info);
@@ -156,7 +132,7 @@ static int run_iteration()
     MPI_Info_set(win_info, (char *) "epoch_type", (char *) "lockall|fence");
     MPI_Info_set(async_info, (char *) "symmetric", (char *) "true");
 
-#if !defined(ENABLE_CSP) && !defined(ENABLE_CSP_ADPT_U)
+#if defined(DISABLE_SHM)
     /* disable shm rma for original case because too heavy per-op lock contention */
     MPI_Info_set(win_info, (char *) "alloc_shm", (char *) "false");
 #endif
@@ -172,7 +148,7 @@ static int run_iteration()
 
         MPI_Win_lock_all(0, win);
         for (dst = 0; dst < nprocs; dst++) {
-            MPI_RMA_OP(x, dst, 0);
+            MPI_Get(locbuf, BUFSIZE, MPI_DOUBLE, dst, 0, 1, target_type, win);
             MPI_Win_flush(dst, win);
         }
         MPI_Win_unlock_all(win);
@@ -181,10 +157,11 @@ static int run_iteration()
 
     /* start */
     t0 = MPI_Wtime();
-    for (wx = 0; wx < nwin; wx++) {
+    for (wx = 0; wx < NWINS; wx++) {
 #if defined(ENABLE_CSP_ADPT_U)
         /* first phase is comp heavy */
         MPI_Info_set(win_info, (char *) "async_config", (char *) "on");
+        MPI_Info_set(async_info, (char *) "async_config", (char *) "on");
 #endif
         MPI_Win_allocate(WINSIZE * sizeof(double), sizeof(double), win_info,
                          MPI_COMM_WORLD, &winbuf, &win);
@@ -195,42 +172,34 @@ static int run_iteration()
         MPI_Win_fence(0, win);
         MPI_Win_lock_all(0, win);
 
-        for (px = 0; px < nphase; px += 1) {
+        for (px = 0; px < PHASE_ITER; px += 1) {
             st0 = MPI_Wtime();
 
-            if (px % 2 == 0) {  /* heavy comp */
+            if (px < PHASE_ITER / 2) {  /* heavy comp */
                 target_computation_set_size(ML, ML, ML);
                 nop = NOP_S;
                 comp_pcnt++;
-#if defined(ENABLE_CSP_ADPT_U)
-                MPI_Info_set(async_info, (char *) "async_config", (char *) "on");
-#endif
             }
             else {      /* heavy comm */
                 target_computation_set_size(MS, MS, MS);
                 nop = NOP_L;
                 comm_pcnt++;
-#if defined(ENABLE_CSP_ADPT_U)
-                MPI_Info_set(async_info, (char *) "async_config", (char *) "off");
-#endif
             }
 
-            for (cx = 0; cx < ncoll; cx += 1) {
-                MPI_Barrier(MPI_COMM_WORLD);
-                MPI_Win_set_info(win, async_info);
-
-                for (x = 0; x < COLL_ITER; x += 1) {
-                    for (dst = 0; dst < nprocs; dst++) {
-                        for (i = 0; i < nop; i++) {
-                            MPI_RMA_OP(x, dst, i);
-                            MPI_Win_flush(dst, win);
-                        }
+            for (x = 0; x < COLL_ITER; x += 1) {
+                for (dst = 0; dst < nprocs; dst++) {
+                    for (i = 0; i < nop; i++) {
+                        MPI_Get(locbuf, BUFSIZE, MPI_DOUBLE, dst, 0, 1, target_type, win);
+                        MPI_Win_flush(dst, win);
                     }
+                }
 
-                    target_computation();
+                target_computation();
 
-                    for (dst = 0; dst < nprocs; dst++) {
-                        MPI_RMA_OP(x, dst, i);
+                for (dst = 0; dst < nprocs; dst++) {
+                    for (i = 0; i < nop; i++) {
+                        MPI_Accumulate(locbuf, BUFSIZE, MPI_DOUBLE, dst, 0, 1, target_type, MPI_SUM,
+                                       win);
                         MPI_Win_flush(dst, win);
                     }
                 }
@@ -238,11 +207,22 @@ static int run_iteration()
 
             MPI_Barrier(MPI_COMM_WORLD);
 
-            if (px % 2 == 0) {  /* heavy comp */
+#if defined(ENABLE_CSP_ADPT_U)
+            if (px == PHASE_ITER / 2 - 1) {     /* next is heavy comm, update info */
+                MPI_Info_set(async_info, (char *) "async_config", (char *) "off");
+            }
+#endif
+            MPI_Win_set_info(win, async_info);
+
+            if (px < PHASE_ITER / 2) {  /* heavy comp */
                 t_comp_phase += (MPI_Wtime() - st0);
+                t_comp_comp += t_comp;
+                t_comp = 0.0;
             }
             else {      /* heavy comm */
                 t_comm_phase += (MPI_Wtime() - st0);
+                t_comm_comp += t_comp;
+                t_comp = 0.0;
             }
         }
 
@@ -252,19 +232,34 @@ static int run_iteration()
 
     t_total = (MPI_Wtime() - t0);       /* s */
 
-    MPI_Reduce(&t_total, &avg_total_time, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-    MPI_Reduce(&t_comp_phase, &avg_t_comp_phase, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-    MPI_Reduce(&t_comm_phase, &avg_t_comm_phase, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-    MPI_Reduce(&t_comp, &avg_t_comp, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    /* min, max, avg */
+    MPI_Reduce(&t_total, &sum_total_times[0], 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&t_comp_phase, &sum_t_comp_phases[0], 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&t_comm_phase, &sum_t_comm_phases[0], 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&t_comp_comp, &sum_t_comp_comps[0], 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&t_comm_comp, &sum_t_comm_comps[0], 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
+
+    MPI_Reduce(&t_total, &sum_total_times[1], 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&t_comp_phase, &sum_t_comp_phases[1], 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&t_comm_phase, &sum_t_comm_phases[1], 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&t_comp_comp, &sum_t_comp_comps[1], 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&t_comm_comp, &sum_t_comm_comps[1], 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
+    MPI_Reduce(&t_total, &sum_total_times[2], 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&t_comp_phase, &sum_t_comp_phases[2], 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&t_comm_phase, &sum_t_comm_phases[2], 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&t_comp_comp, &sum_t_comp_comps[2], 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&t_comm_comp, &sum_t_comm_comps[2], 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
     if (rank == 0) {
         char header[256];
 
         memset(header, 0, sizeof(header));
-        avg_total_time = avg_total_time / nprocs;
-        avg_t_comp_phase = avg_t_comp_phase / nprocs;
-        avg_t_comm_phase = avg_t_comm_phase / nprocs;
-        avg_t_comp = avg_t_comp / nprocs;
+        sum_total_times[2] = sum_total_times[2] / nprocs;
+        sum_t_comp_phases[2] = sum_t_comp_phases[2] / nprocs;
+        sum_t_comm_phases[2] = sum_t_comm_phases[2] / nprocs;
+        sum_t_comp_comps[2] = sum_t_comp_comps[2] / nprocs;
+        sum_t_comm_comps[2] = sum_t_comm_comps[2] / nprocs;
 #ifdef ENABLE_CSP
         const char *nh = getenv("CSP_NG");
         const char *gasync = getenv("CSP_ASYNC_CONFIG");
@@ -276,33 +271,41 @@ static int run_iteration()
             const char *g_int = getenv("CSP_RUNTIME_ASYNC_TIMED_GSYNC_INT");
 
             if (!strncmp(p_lev, "anytime", strlen("anytime"))) {
-                sprintf(header, "csp-%s-%s-I%sL%sH%sG%s-nh%s", op_name, p_lev, p_int, p_freq_l,
+                sprintf(header, "csp-%s-I%sL%sH%sG%s-nh%s", p_lev, p_int, p_freq_l,
                         p_freq_h, g_int, nh);
             }
             else {
-                sprintf(header, "csp-%s-%s-I%sL%sH%s-nh%s", op_name, p_lev, p_int, p_freq_l,
-                        p_freq_h, nh);
+                sprintf(header, "csp-%s-I%sL%sH%s-nh%s", p_lev, p_int, p_freq_l, p_freq_h, nh);
             }
         }
         else {
             /* static on/off */
-            sprintf(header, "csp-%s-%s-nh%s", op_name, gasync, nh);
+            sprintf(header, "csp-%s-nh%s", gasync, nh);
         }
 #elif defined(ENABLE_CSP_ADPT_U)
         const char *nh = getenv("CSP_NG");
         const char *gasync = getenv("CSP_ASYNC_CONFIG");
         const char *p_lev = getenv("CSP_ASYNC_SCHED_LEVEL");
         /* per-window or per-collective user guide */
-        sprintf(header, "csp-%s-u-%s-nh%s", op_name, p_lev, nh);
+        sprintf(header, "csp-u-%s-nh%s", p_lev, nh);
+#elif defined(DISABLE_SHM)
+        sprintf(header, "orig-noshm");
 #else
-        sprintf(header, "orig-%s", op_name);
+        sprintf(header, "orig");
 #endif
 
         fprintf(stdout,
-                "%s: nprocs %d MS %d %d ML %d %d comp %.2lf num_op_s %d num_op_l %d "
-                "total_time %.2lf comp-p %.2lf comm-p %.2lf nwin %d nphase %d ncoll %d\n",
-                header, nprocs, MS, MS / nprocs, ML, ML / nprocs, avg_t_comp, NOP_S, NOP_L,
-                avg_total_time, avg_t_comp_phase, avg_t_comm_phase, nwin, nphase, ncoll);
+                "%s: nprocs %d MS %d %d ML %d %d num_op_s %d num_op_l %d "
+                "nwins %d nphase %d ncoll %d "
+                "total_time %.2lf %.2lf %.2lf comp-p %.2lf %.2lf %.2lf comm-p %.2lf %.2lf %.2lf "
+                "comp-comp %.2lf %.2lf %.2lf comp-comm %.2lf %.2lf %.2lf\n",
+                header, nprocs, MS, MS / nprocs, ML, ML / nprocs, NOP_S, NOP_L,
+                NWINS, PHASE_ITER, COLL_ITER,
+                sum_total_times[2], sum_total_times[0], sum_total_times[1],
+                sum_t_comp_phases[2], sum_t_comp_phases[0], sum_t_comp_phases[1],
+                sum_t_comm_phases[2], sum_t_comm_phases[0], sum_t_comm_phases[1],
+                sum_t_comp_comps[2], sum_t_comp_comps[0], sum_t_comp_comps[1],
+                sum_t_comm_comps[2], sum_t_comm_comps[0], sum_t_comm_comps[1]);
     }
 
     MPI_Info_free(&win_info);
@@ -349,6 +352,18 @@ int main(int argc, char *argv[])
     if (argc >= 6) {
         MS = atoi(argv[5]);
         ML = atoi(argv[6]);
+    }
+
+    if (argc >= 7) {
+        NWINS = atoi(argv[7]);
+    }
+
+    if (argc >= 8) {
+        PHASE_ITER = atoi(argv[8]);
+    }
+
+    if (argc >= 9) {
+        COLL_ITER = atoi(argv[9]);
     }
 
     /* initialize local buffer */
