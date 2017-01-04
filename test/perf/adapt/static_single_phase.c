@@ -13,15 +13,11 @@
 
 /* This benchmark demonstrates the improvement of asynchronous progress
  * or the load imbalance issue in single phase with 3D non-contigunous double data.
- * Every process performs all-to-all RMA-flush-compute-RMA-flush-barrier,
+ * Every process performs all-to-all GET-flush-compute-ACC-flush-barrier,
  * with fixed computing time and increasing number of operations.
  * It is only used to compare the static version with increasing number of
  * ghost processes.
  * */
-
-#define PHASE_ITER 10
-#define COLL_ITER 50
-#define SKIP 10
 
 #define DLEN 4
 #define SUB_DLEN 2
@@ -37,14 +33,7 @@ int rank = 0, nprocs = 0;
 int shm_rank = 0, shm_nprocs = 0;
 MPI_Win win = MPI_WIN_NULL;
 
-#if defined(TEST_RMA_OP_GET)
-const char *op_name = "get";
-#elif defined(TEST_RMA_OP_PUT)
-const char *op_name = "put";
-#else
-const char *op_name = "acc";
-#endif
-
+int PHASE_ITER = 10, COLL_ITER = 50, SKIP = 10;
 int NOP = 1;
 unsigned long SLEEP_TIME = 100; /* us */
 
@@ -103,20 +92,6 @@ static void target_computation_destroy(void)
     C = NULL;
 }
 
-#if defined(TEST_RMA_OP_GET)
-#define MPI_RMA_OP(x, dst, i) { \
-    MPI_Get(locbuf, BUFSIZE, MPI_DOUBLE, dst, 0, 1, target_type, win); \
-    }
-#elif defined(TEST_RMA_OP_PUT)
-#define MPI_RMA_OP(x, dst, i) { \
-    MPI_Put(locbuf, BUFSIZE, MPI_DOUBLE, dst, 0, 1, target_type, win); \
-    }
-#else
-#define MPI_RMA_OP(x, dst, i) { \
-    MPI_Accumulate(locbuf, BUFSIZE, MPI_DOUBLE, dst, 0, 1, target_type, MPI_SUM, win); \
-    }
-#endif
-
 static int run_iteration(void)
 {
     int i, px, x, nwin, nphase, ncoll, errs = 0;
@@ -127,7 +102,7 @@ static int run_iteration(void)
     MPI_Info_create(&win_info);
     MPI_Info_set(win_info, (char *) "epoch_type", (char *) "lockall|fence");
 
-#if !defined(ENABLE_CSP)
+#if defined(DISABLE_SHM)
     /* disable shm rma for original case because too heavy per-op lock contention */
     MPI_Info_set(win_info, (char *) "alloc_shm", (char *) "false");
 #endif
@@ -144,7 +119,7 @@ static int run_iteration(void)
 
         MPI_Win_lock_all(0, win);
         for (dst = 0; dst < nprocs; dst++) {
-            MPI_RMA_OP(x, dst, 0);
+            MPI_Get(locbuf, BUFSIZE, MPI_DOUBLE, dst, 0, 1, target_type, win);
             MPI_Win_flush(dst, win);
         }
         MPI_Win_unlock_all(win);
@@ -155,12 +130,10 @@ static int run_iteration(void)
     MPI_Win_lock_all(0, win);
 
     for (px = 0; px < PHASE_ITER; px++) {
-        MPI_Barrier(MPI_COMM_WORLD);
-
         for (x = 0; x < COLL_ITER; x += 1) {
             for (dst = 0; dst < nprocs; dst++) {
                 for (i = 0; i < NOP; i++) {
-                    MPI_RMA_OP(x, dst, i);
+                    MPI_Get(locbuf, BUFSIZE, MPI_DOUBLE, dst, 0, 1, target_type, win);
                     MPI_Win_flush(dst, win);
                 }
             }
@@ -168,10 +141,15 @@ static int run_iteration(void)
             target_computation();
 
             for (dst = 0; dst < nprocs; dst++) {
-                MPI_RMA_OP(x, dst, i);
-                MPI_Win_flush(dst, win);
+                for (i = 0; i < NOP; i++) {
+                    MPI_Accumulate(locbuf, BUFSIZE, MPI_DOUBLE, dst, 0, 1, target_type, MPI_SUM,
+                                   win);
+                    MPI_Win_flush(dst, win);
+                }
             }
         }
+
+        MPI_Barrier(MPI_COMM_WORLD);
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
@@ -193,14 +171,17 @@ static int run_iteration(void)
         const char *gasync = getenv("CSP_ASYNC_CONFIG");
 
         /* static on/off */
-        sprintf(header, "csp-%s-%s-nh%s", op_name, gasync, nh);
+        sprintf(header, "csp-%s-nh%s", gasync, nh);
+#elif defined(DISABLE_SHM)
+        sprintf(header, "orig-noshm");
 #else
-        sprintf(header, "orig-%s", op_name);
+        sprintf(header, "orig");
 #endif
 
         fprintf(stdout,
-                "%s: nprocs %d M %d N %d K %d m %d n %d k %d comp %.2lf num_op %d total_time %.2lf\n",
-                header, nprocs, M, N, K, m, n, k, avg_comp_time, NOP, avg_total_time);
+                "%s: nprocs %d M %d N %d K %d m %d n %d k %d iter %d %d comp %.2lf num_op %d total_time %.2lf\n",
+                header, nprocs, M, N, K, m, n, k, PHASE_ITER, COLL_ITER,
+                avg_comp_time, NOP, avg_total_time);
     }
 
     MPI_Win_free(&win);
@@ -244,6 +225,14 @@ int main(int argc, char *argv[])
         N = atoi(argv[3]);
         K = atoi(argv[4]);
     }
+
+    if (argc >= 6) {
+        PHASE_ITER = atoi(argv[5]);
+    }
+    if (argc >= 7) {
+        COLL_ITER = atoi(argv[6]);
+    }
+    SKIP = COLL_ITER / 10;
 
     /* initialize local buffer */
     locbuf = malloc(BUFSIZE * sizeof(double));
