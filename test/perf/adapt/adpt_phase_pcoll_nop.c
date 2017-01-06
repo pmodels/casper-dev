@@ -126,6 +126,14 @@ static int run_iteration()
         sum_t_comm_phases[3];
     int comp_pcnt = 0, comm_pcnt = 0;
 
+#if defined(OUTPUT_ALL_PHASES)
+    int phase_idx = 0;
+    int nphases = NWINS * PHASE_ITER;
+    double *phase_times = NULL;
+    phase_times = malloc(sizeof(double) * nphases);
+    memset(phase_times, 0, sizeof(phase_times));
+#endif
+
     MPI_Info_create(&win_info);
     MPI_Info_create(&async_info);
 
@@ -224,6 +232,10 @@ static int run_iteration()
                 t_comm_comp += t_comp;
                 t_comp = 0.0;
             }
+
+#if defined(OUTPUT_ALL_PHASES)
+            phase_times[phase_idx++] = (MPI_Wtime() - st0);
+#endif
         }
 
         MPI_Win_unlock_all(win);
@@ -297,19 +309,30 @@ static int run_iteration()
         fprintf(stdout,
                 "%s: nprocs %d MS %d %d ML %d %d num_op_s %d num_op_l %d "
                 "nwins %d nphase %d ncoll %d "
-                "total_time %.2lf %.2lf %.2lf comp-p %.2lf %.2lf %.2lf comm-p %.2lf %.2lf %.2lf "
-                "comp-comp %.2lf %.2lf %.2lf comp-comm %.2lf %.2lf %.2lf\n",
+                "total_time %.2lf comp-p %.2lf comm-p %.2lf "
+                "comp-comp %.2lf comp-comm %.2lf\n",
                 header, nprocs, MS, MS / nprocs, ML, ML / nprocs, NOP_S, NOP_L,
                 NWINS, PHASE_ITER, COLL_ITER,
-                sum_total_times[2], sum_total_times[0], sum_total_times[1],
-                sum_t_comp_phases[2], sum_t_comp_phases[0], sum_t_comp_phases[1],
-                sum_t_comm_phases[2], sum_t_comm_phases[0], sum_t_comm_phases[1],
-                sum_t_comp_comps[2], sum_t_comp_comps[0], sum_t_comp_comps[1],
-                sum_t_comm_comps[2], sum_t_comm_comps[0], sum_t_comm_comps[1]);
+                sum_total_times[2],
+                sum_t_comp_phases[2],
+                sum_t_comm_phases[2], sum_t_comp_comps[2], sum_t_comm_comps[2]);
+        fflush(stdout);
+#if defined(OUTPUT_ALL_PHASES)
+        fprintf(stdout, "%s-phases: ", header);
+        for (phase_idx = 0; phase_idx < nphases; phase_idx++) {
+            fprintf(stdout, "%.2lf ", phase_times[phase_idx]);
+        }
+        fprintf(stdout, "\n");
+        fflush(stdout);
+#endif
     }
 
     MPI_Info_free(&win_info);
     MPI_Info_free(&async_info);
+
+#if defined(OUTPUT_ALL_PHASES)
+    free(phase_times);
+#endif
 
     return errs;
 }
