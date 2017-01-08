@@ -12,10 +12,13 @@ noinst_PROGRAMS = \
 	overhead_win_setinfo	\
 	csp_overhead_win_setinfo	\
 	adpt_phase_pcoll_nop	\
+	adpt_phase_pcoll_nop_outputall	\
 	adpt_phase_pcoll_nop_disable_shm	\
+	adpt_phase_pcoll_nop_disable_shm_outputall	\
 	csp_adpt_phase_pcoll_nop	\
 	csp_adpt_phase_pcoll_nop_outputall	\
 	csp_adpt_u_phase_pcoll_nop	\
+	csp_adpt_u_phase_pcoll_nop_outputall	\
 	static_single_phase	\
 	static_single_phase_disable_shm	\
 	csp_static_single_phase	\
@@ -51,9 +54,17 @@ adpt_phase_pcoll_nop_SOURCES= adpt_phase_pcoll_nop.c
 adpt_phase_pcoll_nop_CFLAGS= -O2 -mkl=sequential
 adpt_phase_pcoll_nop_LDFLAGS= -mkl=sequential
 
+adpt_phase_pcoll_nop_outputall_SOURCES= adpt_phase_pcoll_nop.c
+adpt_phase_pcoll_nop_outputall_CFLAGS= -O2 -mkl=sequential -DOUTPUT_ALL_PHASES
+adpt_phase_pcoll_nop_outputall_LDFLAGS= -mkl=sequential
+
 adpt_phase_pcoll_nop_disable_shm_SOURCES= adpt_phase_pcoll_nop.c
 adpt_phase_pcoll_nop_disable_shm_CFLAGS= -O2 -mkl=sequential -DDISABLE_SHM
 adpt_phase_pcoll_nop_disable_shm_LDFLAGS= -mkl=sequential
+
+adpt_phase_pcoll_nop_disable_shm_outputall_SOURCES= adpt_phase_pcoll_nop.c
+adpt_phase_pcoll_nop_disable_shm_outputall_CFLAGS= -O2 -mkl=sequential -DDISABLE_SHM -DOUTPUT_ALL_PHASES
+adpt_phase_pcoll_nop_disable_shm_outputall_LDFLAGS= -mkl=sequential
 
 csp_adpt_phase_pcoll_nop_SOURCES= adpt_phase_pcoll_nop.c
 csp_adpt_phase_pcoll_nop_CFLAGS= -O2 -DENABLE_CSP -mkl=sequential
@@ -69,6 +80,11 @@ csp_adpt_u_phase_pcoll_nop_SOURCES= adpt_phase_pcoll_nop.c
 csp_adpt_u_phase_pcoll_nop_CFLAGS= -O2 -DENABLE_CSP_ADPT_U -mkl=sequential
 csp_adpt_u_phase_pcoll_nop_LDFLAGS= -Wl,-rpath -Wl,$(libdir) -mkl=sequential
 csp_adpt_u_phase_pcoll_nop_LDADD= -L$(libdir) -lcasper 
+
+csp_adpt_u_phase_pcoll_nop_outputall_SOURCES= adpt_phase_pcoll_nop.c
+csp_adpt_u_phase_pcoll_nop_outputall_CFLAGS= -O2 -DENABLE_CSP_ADPT_U -DOUTPUT_ALL_PHASES -mkl=sequential
+csp_adpt_u_phase_pcoll_nop_outputall_LDFLAGS= -Wl,-rpath -Wl,$(libdir) -mkl=sequential
+csp_adpt_u_phase_pcoll_nop_outputall_LDADD= -L$(libdir) -lcasper 
 
 csp_adpt_thresh_all2all_nop_get_SOURCES= adpt_thresh_all2all_nop.c
 csp_adpt_thresh_all2all_nop_get_CFLAGS= -O2 -DENABLE_CSP -DTEST_RMA_OP_GET
