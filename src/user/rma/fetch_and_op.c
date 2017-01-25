@@ -100,7 +100,7 @@ static int CSP_fetch_and_op_impl(const void *origin_addr, void *result_addr,
         mpi_errno = PMPI_Fetch_and_op(origin_addr, result_addr, datatype,
                                       target->ug_rank, target_disp, op, *win_ptr);
 
-        CSP_ADAPT_PROF_INC_TO_USER_CNT(CSP_ADPT_PROF_CAS);
+        CSP_ADAPT_PROF_INC_TO_USER_CNT(rank, CSP_ADPT_PROF_FOP);
 
         CSP_DBG_PRINT("CASPER Fetch_and_op to (target %d, win 0x%x [%s]) \n",
                       target->ug_rank, *win_ptr, CSP_target_get_epoch_stat_name(target, ug_win));

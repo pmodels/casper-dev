@@ -38,6 +38,7 @@ CSP_define_win_name_cache;
 CSP_env_param CSP_ENV;
 
 FILE *CSP_appending_fp = NULL;
+FILE *CSP_global_verbose_fp = NULL;
 
 #ifdef CSP_ENABLE_RUNTIME_MONITOR
 /* local runtime monitor */
@@ -504,6 +505,13 @@ int MPI_Init_thread(int *argc, char ***argv, int required, int *provided)
             goto fn_fail;
 #endif
 
+        /* only enable per rank verbose in separate file when verbose >= 2 */
+        if (CSP_ENV.file_verbose >= 2) {
+            char fname[256];
+            sprintf(fname, "rank-%d.log", user_rank);
+            CSP_global_verbose_fp = fopen(fname, "w+"); /* overwrite */
+        }
+
         CSP_init_win_cache();
         CSP_init_win_name_cache();
         CSP_rm_reset_all();
@@ -546,6 +554,13 @@ int MPI_Init_thread(int *argc, char ***argv, int required, int *provided)
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
     CSP_adpt_finalize();
 #endif
+
+    if (CSP_ENV.file_verbose >= 2) {
+        if (CSP_global_verbose_fp != NULL) {
+            fclose(CSP_global_verbose_fp);
+            CSP_global_verbose_fp = NULL;
+        }
+    }
 
     if (CSP_COMM_USER_WORLD != MPI_COMM_NULL) {
         CSP_DBG_PRINT("free CSP_COMM_USER_WORLD\n");

@@ -646,6 +646,8 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
         ug_win->num_nodes = tmp_bcast_buf[1];
     }
 
+    ug_win->adapt_remote_exed = 0;
+
     /* Read window configuration */
     mpi_errno = read_win_info(info, ug_win);
     if (mpi_errno != MPI_SUCCESS)
@@ -763,9 +765,11 @@ int MPI_Win_allocate(MPI_Aint size, int disp_unit, MPI_Info info,
 #endif
 
     if (user_rank == 0) {
+        for (i = 0; i < user_nprocs; i++) {
+            CSP_INFO_PRINT_FILE_APPEND(1, "  target[%d]  size = %ld, disp_unit = %d\n",
+                                       i, ug_win->targets[i].size, ug_win->targets[i].disp_unit);
+        }
         CSP_INFO_PRINT(4, "    size(KB) = %ld, disp_unit = %d\n\n", size / 1024, disp_unit);
-        CSP_INFO_PRINT_FILE_APPEND(1, "    size(KB) = %ld, disp_unit = %d\n\n", size / 1024,
-                                   disp_unit);
     }
 
     /* Print asynchronous configuration. */

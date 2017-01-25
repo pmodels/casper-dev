@@ -100,7 +100,7 @@ static int CSP_compare_and_swap_impl(const void *origin_addr, const void *compar
         mpi_errno = PMPI_Compare_and_swap(origin_addr, compare_addr, result_addr,
                                           datatype, target->ug_rank, target_disp, *win_ptr);
 
-        CSP_ADAPT_PROF_INC_TO_USER_CNT(CSP_ADPT_PROF_CAS);
+        CSP_ADAPT_PROF_INC_TO_USER_CNT(rank, CSP_ADPT_PROF_CAS);
 
         CSP_DBG_PRINT("CASPER Compare_and_swap to (target %d, win 0x%x [%s]) \n",
                       target->ug_rank, *win_ptr, CSP_target_get_epoch_stat_name(target, ug_win));

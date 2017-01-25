@@ -149,33 +149,9 @@ int CSP_win_print_async_config(CSP_win * ug_win)
                     async_off_cnt++;
                 }
             }
-            CSP_INFO_PRINT(2, "CASPER Window %s: target async_config: on %d; off %d\n",
-                           ug_win->info_args.win_name, async_on_cnt, async_off_cnt);
-            CSP_INFO_PRINT_FILE_APPEND(1, "    Per-target async_config summary: on %d; off %d\n",
-                                       async_on_cnt, async_off_cnt);
-        }
-
-        /* The root user gathers the frequency number on all targets and print in file. */
-        if (CSP_ENV.file_verbose >= 1) {
-            /* Gather frequency numbers to root user */
-            tmp_async_gather_buf = CSP_calloc(3 * user_nprocs, sizeof(double));
-
-            tmp_async_gather_buf[3 * user_rank] = CSP_RM[CSP_RM_COMM_FREQ].last_freq * 1.0;
-            tmp_async_gather_buf[3 * user_rank + 1] = CSP_RM[CSP_RM_COMM_FREQ].last_time;
-            tmp_async_gather_buf[3 * user_rank + 2] = CSP_RM[CSP_RM_COMM_FREQ].last_interval;
-            mpi_errno = PMPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, tmp_async_gather_buf,
-                                       3, MPI_DOUBLE, ug_win->user_comm);
-            if (mpi_errno != MPI_SUCCESS)
-                goto fn_fail;
-
-            if (user_rank == 0) {
-                CSP_INFO_PRINT_FILE_APPEND(1, "    Per-target async_config:\n");
-                for (i = 0; i < user_nprocs; i++)
-                    CSP_INFO_PRINT_FILE_APPEND(1, "    [%d] async stat: freq=%.0f(%.4f/%.4f)\n",
-                                               i, tmp_async_gather_buf[3 * i],
-                                               tmp_async_gather_buf[3 * i + 1],
-                                               tmp_async_gather_buf[3 * i + 2]);
-            }
+            CSP_INFO_PRINT(2, "CASPER Window %s-%d: target async_config: on %d; off %d\n",
+                           ug_win->info_args.win_name, ug_win->adapt_remote_exed,
+                           async_on_cnt, async_off_cnt);
         }
     }
     else
@@ -187,6 +163,23 @@ int CSP_win_print_async_config(CSP_win * ug_win)
                            ug_win->info_args.win_name, name);
         }
     }
+
+    CSP_INFO_PRINT_FILE_PER_RANK(2, "CASPER Window %s-%d: target async_config\n",
+                                 ug_win->info_args.win_name, ug_win->adapt_remote_exed);
+
+    /* The root user gathers the frequency number on all targets and print in file. */
+    if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
+        CSP_async_stat stat = CSP_adpt_get_async_stat();
+        CSP_INFO_PRINT_FILE_PER_RANK(2, "last predict freq: %.1f, %.2lf,%.2lf, %s\n",
+                                     CSP_RM[CSP_RM_COMM_FREQ].last_freq * 1.0,
+                                     CSP_RM[CSP_RM_COMM_FREQ].last_time,
+                                     CSP_RM[CSP_RM_COMM_FREQ].last_interval,
+                                     ((stat == CSP_ASYNC_ON) ? "on" : "off"));
+    }
+
+#ifdef CSP_ENABLE_ADAPT_PROF
+    CSP_adapt_prof_dump();
+#endif
 
   fn_exit:
     if (tmp_async_gather_buf)
@@ -269,9 +262,6 @@ int CSP_win_coll_sched_async_config(CSP_win * ug_win)
     PMPI_Comm_size(ug_win->user_comm, &user_nprocs);
     PMPI_Comm_rank(ug_win->user_comm, &user_rank);
 
-    if (user_rank == 0)
-        CSP_INFO_PRINT_FILE_START(1, ug_win->info_args.win_name);
-
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
     /* If runtime scheduling is enabled for this window, we exchange the
      * asynchronous configure with every target, since its value might be different. */
@@ -304,6 +294,8 @@ int CSP_win_coll_sched_async_config(CSP_win * ug_win)
                 if (mpi_errno != MPI_SUCCESS)
                     goto fn_fail;
             }
+
+            ug_win->adapt_remote_exed++;
         }
     }
     else
@@ -330,8 +322,6 @@ int CSP_win_coll_sched_async_config(CSP_win * ug_win)
         CSP_win_print_async_config(ug_win);
 
   fn_exit:
-    if (user_rank == 0)
-        CSP_INFO_PRINT_FILE_END(1, ug_win->info_args.win_name);
     if (tmp_gather_buf)
         free(tmp_gather_buf);
     return mpi_errno;

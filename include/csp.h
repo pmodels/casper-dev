@@ -148,6 +148,16 @@ extern FILE *CSP_appending_fp;
     }                                                                \
     } while (0)
 
+extern FILE *CSP_global_verbose_fp;
+#define CSP_INFO_PRINT_FILE_PER_RANK(level, str, ...) do { \
+    if (CSP_ENV.file_verbose > 0 && CSP_ENV.file_verbose >= level) { \
+        if (CSP_global_verbose_fp != NULL) {                         \
+            fprintf(CSP_global_verbose_fp, str, ## __VA_ARGS__);     \
+            fflush(CSP_global_verbose_fp);                           \
+        }                                                            \
+    }                                                                \
+    } while (0)
+
 #define CSP_DBG_PRINT_FCNAME() CSP_DBG_PRINT("in %s\n", __FUNCTION__)
 #define CSP_ERR_PRINT(str,...) do { \
     fprintf(stderr, "[CSP][%d]"str, CSP_MY_RANK_IN_WORLD, ## __VA_ARGS__); \
@@ -434,6 +444,7 @@ typedef struct CSP_win {
     /* constant flavor attribute to override real flavor when user queries. */
     MPIR_Win_flavor_t create_flavor;
 
+    int adapt_remote_exed;
 } CSP_win;
 
 typedef struct CSP_func_info {
@@ -1025,18 +1036,18 @@ extern CSP_async_stat CSP_adpt_sched_async_stat(void);
 extern CSP_async_stat CSP_adpt_get_async_stat(void);
 
 typedef struct {
-    int to_user;
+    int *to_users;
     int to_ghost;
 } CSP_adapt_op_counter;
 
 #ifdef CSP_ENABLE_ADAPT_PROF
 extern CSP_adapt_op_counter ADAPT_PROF_CNT[CSP_ADPT_PROF_MAX];
 
-#define CSP_ADAPT_PROF_INC_TO_USER_CNT(op) {ADAPT_PROF_CNT[op].to_user++;}
+#define CSP_ADAPT_PROF_INC_TO_USER_CNT(user_rank, op) {ADAPT_PROF_CNT[op].to_users[user_rank]++;}
 #define CSP_ADAPT_PROF_INC_TO_GHOST_CNT(op) {ADAPT_PROF_CNT[op].to_ghost++;}
 #else
 
-#define CSP_ADAPT_PROF_INC_TO_USER_CNT(op)
+#define CSP_ADAPT_PROF_INC_TO_USER_CNT(user_rank, op)
 #define CSP_ADAPT_PROF_INC_TO_GHOST_CNT(op)
 #endif
 

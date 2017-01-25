@@ -26,6 +26,13 @@ int MPI_Finalize(void)
     CSP_adpt_finalize();
 #endif
 
+    if (CSP_ENV.file_verbose >= 2) {
+        if (CSP_global_verbose_fp != NULL) {
+            fclose(CSP_global_verbose_fp);
+            CSP_global_verbose_fp = NULL;
+        }
+    }
+
     if (CSP_COMM_USER_WORLD != MPI_COMM_NULL) {
         CSP_DBG_PRINT(" free CSP_COMM_USER_WORLD\n");
         PMPI_Comm_free(&CSP_COMM_USER_WORLD);

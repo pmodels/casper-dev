@@ -155,7 +155,7 @@ static int CSP_rput_impl(const void *origin_addr, int origin_count,
                               target->ug_rank, target_disp, target_count, target_datatype, *win_ptr,
                               request);
 
-        CSP_ADAPT_PROF_INC_TO_USER_CNT(CSP_ADPT_PROF_PUT);
+        CSP_ADAPT_PROF_INC_TO_USER_CNT(rank, CSP_ADPT_PROF_PUT);
 
         CSP_DBG_PRINT("CASPER Rput to (target %d, win 0x%x [%s]) \n",
                       target->ug_rank, *win_ptr, CSP_target_get_epoch_stat_name(target, ug_win));

@@ -62,22 +62,39 @@ static const char *CSP_ADPT_PROF_NAME[CSP_ADPT_PROF_MAX] = {
 
 static void adapt_prof_reset(void)
 {
-    int op = 0;
-    for (op = 0; op < CSP_ADPT_PROF_MAX; op++)
-        ADAPT_PROF_CNT[op].to_ghost = ADAPT_PROF_CNT[op].to_user = 0;
+    int op = 0, user_size = 0;
+    for (op = 0; op < CSP_ADPT_PROF_MAX; op++) {
+        ADAPT_PROF_CNT[op].to_ghost = 0;
+        PMPI_Comm_size(CSP_COMM_USER_WORLD, &user_size);
+        memset(ADAPT_PROF_CNT[op].to_users, 0, sizeof(int) * user_size);
+    }
 }
 
-static void adapt_prof_dump(void)
+void CSP_adapt_prof_dump(void)
 {
-    int op = 0;
-    CSP_INFO_PRINT(4, "ADAPT rma profiling (op to user:ghost): ");
+    int op = 0, ucnt_sum, i, user_size;
+
+    PMPI_Comm_size(CSP_COMM_USER_WORLD, &user_size);
+    CSP_INFO_PRINT_FILE_PER_RANK(2, "ADAPT rma profiling (op to ghost: users): \n");
+
     for (op = 0; op < CSP_ADPT_PROF_MAX; op++) {
-        if (ADAPT_PROF_CNT[op].to_ghost > 0 || ADAPT_PROF_CNT[op].to_user > 0) {
-            CSP_INFO_PRINT(4, " %s %d:%d, ", CSP_ADPT_PROF_NAME[op],
-                           ADAPT_PROF_CNT[op].to_user, ADAPT_PROF_CNT[op].to_ghost);
+        if (ADAPT_PROF_CNT[op].to_ghost > 0) {
+            CSP_INFO_PRINT_FILE_PER_RANK(2, " %s ghost:%d\n",
+                                         CSP_ADPT_PROF_NAME[op], ADAPT_PROF_CNT[op].to_ghost);
+        }
+
+        ucnt_sum = 0;
+        for (i = 0; i < user_size; i++)
+            ucnt_sum += ADAPT_PROF_CNT[op].to_users[i];
+
+        if (ucnt_sum > 0) {
+            CSP_INFO_PRINT_FILE_PER_RANK(2, " %s users:", CSP_ADPT_PROF_NAME[op]);
+            for (i = 0; i < user_size; i++)
+                CSP_INFO_PRINT_FILE_PER_RANK(2, "%d,", ADAPT_PROF_CNT[op].to_users[i]);
+            CSP_INFO_PRINT_FILE_PER_RANK(2, "\n");
         }
     }
-    CSP_INFO_PRINT(4, "\n");
+    CSP_INFO_PRINT_FILE_PER_RANK(2, "\n");
 
     adapt_prof_reset();
 }
@@ -361,7 +378,9 @@ int CSP_gadpt_refresh(void)
                        async_on_cnt, async_off_cnt);
 
 #ifdef CSP_ENABLE_ADAPT_PROF
-        adapt_prof_dump();
+        CSP_INFO_PRINT_FILE_PER_RANK(2, "GADPT local cache refresh: on %d; off %d\n",
+                                     async_on_cnt, async_off_cnt);
+        CSP_adapt_prof_dump();
 #endif
     }
 
@@ -471,6 +490,15 @@ static int gadpt_init(void)
 
 void CSP_adpt_finalize(void)
 {
+#ifdef CSP_ENABLE_ADAPT_PROF
+    {
+        int op = 0, user_size = 0;
+        PMPI_Comm_size(CSP_COMM_USER_WORLD, &user_size);
+        for (op = 0; op < CSP_ADPT_PROF_MAX; op++) {
+            free(ADAPT_PROF_CNT[op].to_users);
+        }
+    }
+#endif
     return gadpt_finalize();
 }
 
@@ -486,6 +514,14 @@ int CSP_adpt_init(void)
         goto fn_fail;
 
 #ifdef CSP_ENABLE_ADAPT_PROF
+    {
+        int op = 0, user_size = 0;
+        PMPI_Comm_size(CSP_COMM_USER_WORLD, &user_size);
+        for (op = 0; op < CSP_ADPT_PROF_MAX; op++) {
+            ADAPT_PROF_CNT[op].to_users = CSP_calloc(user_size, sizeof(int));
+        }
+    }
+
     adapt_prof_reset();
 #endif
 
