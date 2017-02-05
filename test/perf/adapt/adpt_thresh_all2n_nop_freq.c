@@ -87,11 +87,18 @@ static double run_test(int nop)
     int i, x;
     int dst;
     double t0, t_total = 0.0;
+    int target_cnt;
+
+#ifdef TEST_RMA_CONTIG
+    target_cnt = bufsize;
+#else
+    target_cnt = 1;
+#endif
 
     MPI_Win_lock_all(0, win);
     for (x = 0; x < SKIP; x++) {
         for (dst = 0; dst < nprocs; dst++) {
-            ISSUE_RMA_OP(locbuf, bufsize, MPI_DOUBLE, dst, 0, 1, target_type, win);
+            ISSUE_RMA_OP(locbuf, bufsize, MPI_DOUBLE, dst, 0, target_cnt, target_type, win);
 #if !defined(TEST_RMA_FLUSH_ALL)
             MPI_Win_flush(dst, win);
 #endif
@@ -106,7 +113,7 @@ static double run_test(int nop)
     for (x = 0; x < ITER; x++) {
         for (dst = 0; dst < nprocs; dst++) {
             if (target_bits[dst] == 1) {
-                ISSUE_RMA_OP(locbuf, bufsize, MPI_DOUBLE, dst, 0, 1, target_type, win);
+                ISSUE_RMA_OP(locbuf, bufsize, MPI_DOUBLE, dst, 0, target_cnt, target_type, win);
 #if !defined(TEST_RMA_FLUSH_ALL)
                 MPI_Win_flush(dst, win);
 #endif
@@ -121,7 +128,7 @@ static double run_test(int nop)
         for (dst = 0; dst < nprocs; dst++) {
             if (target_bits[dst] == 1) {
                 for (i = 0; i < nop; i++) {
-                    ISSUE_RMA_OP(locbuf, bufsize, MPI_DOUBLE, dst, 0, 1, target_type, win);
+                    ISSUE_RMA_OP(locbuf, bufsize, MPI_DOUBLE, dst, 0, target_cnt, target_type, win);
 #if !defined(TEST_RMA_FLUSH_ALL)
                     MPI_Win_flush(dst, win);
 #endif
@@ -174,6 +181,11 @@ static double run_with_async_config(const char *config, int nop)
 
 static void create_datatype(void)
 {
+#ifdef TEST_RMA_CONTIG
+    target_type = MPI_DOUBLE;
+    target_size = sizeof(double);
+    target_ext = sizeof(double);
+#else
     int sizes[3], subsizes[3], starts[3];
     MPI_Aint lb = 0;
 
@@ -195,6 +207,7 @@ static void create_datatype(void)
             fprintf(stderr, "Internal error: target_size %d != bufsize %d\n", bufsize, bufsize);
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
+#endif
 }
 
 /* adjust interval when diff becomes small */
@@ -396,7 +409,9 @@ int main(int argc, char *argv[])
 
   exit:
     free(target_bits);
+#ifndef TEST_RMA_CONTIG
     MPI_Type_free(&target_type);
+#endif
     free(locbuf);
     MPI_Finalize();
 
