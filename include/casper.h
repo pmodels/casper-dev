@@ -10,6 +10,8 @@
 
 /* Get the number of ghost processes. */
 int CSP_ghost_size(int *ng);
+int CSP_get_verbose(int *verbose);
+int CSP_set_verbose(int verbose);
 
 /* Dump asynchronous configuration to specified file.
  * It is a local call. */
