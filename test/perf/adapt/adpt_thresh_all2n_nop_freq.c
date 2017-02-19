@@ -34,9 +34,18 @@
 /* 3D matrix on target window */
 #define WINSIZE (DLEN*DLEN2*DLEN3)
 
+#if defined(TEST_RMA_OP_FOP) || defined(TEST_RMA_OP_CAS)
+#define MPI_DATATYPE MPI_LONG
+#define DATATYPE long
+#else
+#define MPI_DATATYPE MPI_DOUBLE
+#define DATATYPE double
+#endif
 MPI_Win win;
-double *winbuf = NULL;
-double *locbuf = NULL;
+DATATYPE *winbuf = NULL;
+DATATYPE *locbuf = NULL;
+DATATYPE *resbuf = NULL;
+DATATYPE compbuf[1];            /* only used in CAS. */
 
 int verbose = 1;
 int rank, nprocs;
@@ -53,6 +62,12 @@ int sub_dlen = SUB_DLEN, bufsize = SUB_DLEN * SUB_DLEN3 * SUB_DLEN3;
 const char *op_name = "get";
 #elif defined(TEST_RMA_OP_PUT)
 const char *op_name = "put";
+#elif defined(TEST_RMA_OP_GETACC)
+const char *op_name = "gacc";
+#elif defined(TEST_RMA_OP_FOP)
+const char *op_name = "fop";
+#elif defined(TEST_RMA_OP_CAS)
+const char *op_name = "cas";
 #else
 const char *op_name = "acc";
 #endif
@@ -72,13 +87,23 @@ static void usleep_by_count(unsigned long us)
 }
 
 #if defined(TEST_RMA_OP_GET)
-#define ISSUE_RMA_OP(locbuf, origin_cnt, origin_type, target_rank, target_disp, target_cnt, target_type, win)   \
+#define ISSUE_RMA_OP(locbuf, origin_cnt, origin_type, compbuf, resbuf, target_rank, target_disp, target_cnt, target_type, win)   \
             MPI_Get(locbuf, origin_cnt, origin_type, target_rank, target_disp, target_cnt, target_type, win)
 #elif defined(TEST_RMA_OP_PUT)
-#define ISSUE_RMA_OP(locbuf, origin_cnt, origin_type, target_rank, target_disp, target_cnt, target_type, win)   \
+#define ISSUE_RMA_OP(locbuf, origin_cnt, origin_type, compbuf, resbuf, target_rank, target_disp, target_cnt, target_type, win)   \
             MPI_Put(locbuf, origin_cnt, origin_type, target_rank, target_disp, target_cnt, target_type, win)
+#elif defined(TEST_RMA_OP_GETACC)
+#define ISSUE_RMA_OP(locbuf, origin_cnt, origin_type, compbuf, resbuf, target_rank, target_disp, target_cnt, target_type, win)   \
+            MPI_Get_accumulate(locbuf, origin_cnt, origin_type, resbuf, origin_cnt, origin_type, \
+                               target_rank, target_disp, target_cnt, target_type, MPI_SUM, win)
+#elif defined(TEST_RMA_OP_FOP)
+#define ISSUE_RMA_OP(locbuf, origin_cnt, origin_type, compbuf, resbuf, target_rank, target_disp, target_cnt, target_type, win)   \
+            MPI_Fetch_and_op(locbuf, resbuf, origin_type, target_rank, target_disp, MPI_SUM, win)
+#elif defined(TEST_RMA_OP_CAS)
+#define ISSUE_RMA_OP(locbuf, origin_cnt, origin_type, compbuf, resbuf, target_rank, target_disp, target_cnt, target_type, win)   \
+            MPI_Compare_and_swap(locbuf, compbuf, resbuf, origin_type, target_rank, target_disp, win)
 #else
-#define ISSUE_RMA_OP(locbuf, origin_cnt, origin_type, target_rank, target_disp, target_cnt, target_type, win)   \
+#define ISSUE_RMA_OP(locbuf, origin_cnt, origin_type, compbuf, resbuf, target_rank, target_disp, target_cnt, target_type, win)   \
             MPI_Accumulate(locbuf, origin_cnt, origin_type, target_rank, target_disp, target_cnt, target_type, MPI_SUM, win)
 #endif
 
@@ -98,7 +123,8 @@ static double run_test(int nop)
     MPI_Win_lock_all(0, win);
     for (x = 0; x < SKIP; x++) {
         for (dst = 0; dst < nprocs; dst++) {
-            ISSUE_RMA_OP(locbuf, bufsize, MPI_DOUBLE, dst, 0, target_cnt, target_type, win);
+            ISSUE_RMA_OP(locbuf, bufsize, MPI_DATATYPE, compbuf, resbuf, dst, 0,
+                         target_cnt, target_type, win);
 #if !defined(TEST_RMA_FLUSH_ALL)
             MPI_Win_flush(dst, win);
 #endif
@@ -113,7 +139,8 @@ static double run_test(int nop)
     for (x = 0; x < ITER; x++) {
         for (dst = 0; dst < nprocs; dst++) {
             if (target_bits[dst] == 1) {
-                ISSUE_RMA_OP(locbuf, bufsize, MPI_DOUBLE, dst, 0, target_cnt, target_type, win);
+                ISSUE_RMA_OP(locbuf, bufsize, MPI_DATATYPE, compbuf, resbuf, dst, 0,
+                             target_cnt, target_type, win);
 #if !defined(TEST_RMA_FLUSH_ALL)
                 MPI_Win_flush(dst, win);
 #endif
@@ -128,7 +155,8 @@ static double run_test(int nop)
         for (dst = 0; dst < nprocs; dst++) {
             if (target_bits[dst] == 1) {
                 for (i = 0; i < nop; i++) {
-                    ISSUE_RMA_OP(locbuf, bufsize, MPI_DOUBLE, dst, 0, target_cnt, target_type, win);
+                    ISSUE_RMA_OP(locbuf, bufsize, MPI_DATATYPE, compbuf, resbuf, dst, 0,
+                                 target_cnt, target_type, win);
 #if !defined(TEST_RMA_FLUSH_ALL)
                     MPI_Win_flush(dst, win);
 #endif
@@ -159,7 +187,7 @@ static double run_with_async_config(const char *config, int nop)
     MPI_Info_set(win_info, (char *) "epoch_type", (char *) "fence|lockall");
     MPI_Info_set(win_info, (char *) "async_config", config);
 
-    MPI_Win_allocate(sizeof(double) * WINSIZE, sizeof(double), win_info,
+    MPI_Win_allocate(sizeof(DATATYPE) * WINSIZE, sizeof(DATATYPE), win_info,
                      MPI_COMM_WORLD, &winbuf, &win);
 
     /* reset window */
@@ -181,10 +209,10 @@ static double run_with_async_config(const char *config, int nop)
 
 static void create_datatype(void)
 {
-#ifdef TEST_RMA_CONTIG
-    target_type = MPI_DOUBLE;
-    target_size = sizeof(double);
-    target_ext = sizeof(double);
+#if defined(TEST_RMA_CONTIG) || defined(TEST_RMA_OP_FOP) || defined(TEST_RMA_OP_CAS)
+    target_type = MPI_DATATYPE;
+    target_size = sizeof(DATATYPE);
+    target_ext = sizeof(DATATYPE);
 #else
     int sizes[3], subsizes[3], starts[3];
     MPI_Aint lb = 0;
@@ -197,12 +225,12 @@ static void create_datatype(void)
     subsizes[2] = SUB_DLEN3;
     starts[0] = starts[1] = starts[2] = 0;
 
-    MPI_Type_create_subarray(3, sizes, subsizes, starts, MPI_ORDER_C, MPI_DOUBLE, &target_type);
+    MPI_Type_create_subarray(3, sizes, subsizes, starts, MPI_ORDER_C, MPI_DATATYPE, &target_type);
     MPI_Type_commit(&target_type);
 
     MPI_Type_get_extent(target_type, &lb, &target_ext);
     MPI_Type_size(target_type, &target_size);
-    if (target_size != bufsize * sizeof(double)) {
+    if (target_size != bufsize * sizeof(DATATYPE)) {
         if (rank == 0)
             fprintf(stderr, "Internal error: target_size %d != bufsize %d\n", bufsize, bufsize);
         MPI_Abort(MPI_COMM_WORLD, 1);
@@ -223,8 +251,8 @@ static void inline report_output(int ng, int nop, double on_time, double diff)
 {
     if (rank == 0) {
         fprintf(stdout,
-                "csp-%s-ng%d: comp_time %d sub_dlen %d size %d nprocs %d ntnodes %d ntargets %d nop %d total_time %.2lf diff %.2lf freq %.1f\n",
-                op_name, ng, comp_time, sub_dlen, target_size, nprocs, NNODES,
+                "csp-%s-ng%d: comp_time %d count %d target_size %d nprocs %d ntnodes %d ntargets %d nop %d total_time %.2lf diff %.2lf freq %.1f\n",
+                op_name, ng, comp_time, bufsize, target_size, nprocs, NNODES,
                 ntargets, nop, on_time, diff, (1 - comp_time / on_time) * 100 /*comm freq */);
         fflush(stdout);
     }
@@ -297,7 +325,7 @@ int main(int argc, char *argv[])
     }
 
     ng_str = getenv("CSP_NG");
-    if (ng_str != "") {
+    if (ng_str != NULL && strlen(ng_str) > 0) {
         ng = atoi(ng_str);
     }
 
@@ -324,13 +352,20 @@ int main(int argc, char *argv[])
     diff_report = DIFF_REPORT / (ng * 0.8);     /* reduce report range for large ng */
     diff_reduce_iter = (DIFF_REDUCE_ITER / (ng * 0.8)); /* similar for fine-grained adjusting range */
 
+#if defined(TEST_RMA_OP_FOP) || defined(TEST_RMA_OP_CAS)
+    bufsize = 1;
+#else
     bufsize = sub_dlen * SUB_DLEN2 * SUB_DLEN3;
+#endif
     create_datatype();
 
-    /* initialize local buffer */
-    locbuf = malloc(bufsize * sizeof(double));
-    for (i = 0; i < bufsize; i++)
+    /* initialize local buffers */
+    locbuf = malloc(bufsize * sizeof(DATATYPE));
+    resbuf = malloc(bufsize * sizeof(DATATYPE));
+    for (i = 0; i < bufsize; i++) {
         locbuf[i] = i;
+        resbuf[i] = i;
+    }
 
     nop = nop_min;
     while (nop <= nop_max && nop >= nop_min) {
@@ -351,8 +386,8 @@ int main(int argc, char *argv[])
         }
         else if (verbose && rank == 0) {
             fprintf(stdout,
-                    "verbose: nop %d iter %d on_time %.2lf off_time %.2lf diff %.2lf freq %.1f\n",
-                    nop, ITER, on_time, off_time, diff,
+                    "verbose: nop %d bufsize %d iter %d on_time %.2lf off_time %.2lf diff %.2lf freq %.1f\n",
+                    nop, bufsize, ITER, on_time, off_time, diff,
                     (1 - comp_time / on_time) * 100 /*comm freq */);
             fflush(stdout);
         }
@@ -409,10 +444,11 @@ int main(int argc, char *argv[])
 
   exit:
     free(target_bits);
-#ifndef TEST_RMA_CONTIG
+#if !defined(TEST_RMA_CONTIG) && !defined(TEST_RMA_OP_FOP) && !defined(TEST_RMA_OP_CAS)
     MPI_Type_free(&target_type);
 #endif
     free(locbuf);
+    free(resbuf);
     MPI_Finalize();
 
     return 0;

@@ -31,6 +31,9 @@ noinst_PROGRAMS = \
 	csp_adpt_thresh_all2n_nop_freq_put	\
 	csp_adpt_thresh_all2n_nop_freq_get	\
 	csp_adpt_thresh_all2n_nop_freq_acc	\
+	csp_adpt_thresh_all2n_nop_freq_gacc	\
+	csp_adpt_thresh_all2n_nop_freq_fop	\
+	csp_adpt_thresh_all2n_nop_freq_cas	\
 	csp_adpt_thresh_all2n_nop_freq_cput	\
 	csp_adpt_thresh_all2n_nop_freq_cget	\
 	csp_adpt_thresh_all2n_nop_freq_cacc	\
@@ -133,6 +136,21 @@ csp_adpt_thresh_all2n_nop_freq_acc_SOURCES= adpt_thresh_all2n_nop_freq.c
 csp_adpt_thresh_all2n_nop_freq_acc_CFLAGS= -O2 -DENABLE_CSP -DTEST_RMA_OP_ACC
 csp_adpt_thresh_all2n_nop_freq_acc_LDFLAGS= -Wl,-rpath -Wl,$(libdir) 
 csp_adpt_thresh_all2n_nop_freq_acc_LDADD= -L$(libdir) -lcasper 
+
+csp_adpt_thresh_all2n_nop_freq_gacc_SOURCES= adpt_thresh_all2n_nop_freq.c
+csp_adpt_thresh_all2n_nop_freq_gacc_CFLAGS= -O2 -DENABLE_CSP -DTEST_RMA_OP_GETACC
+csp_adpt_thresh_all2n_nop_freq_gacc_LDFLAGS= -Wl,-rpath -Wl,$(libdir) 
+csp_adpt_thresh_all2n_nop_freq_gacc_LDADD= -L$(libdir) -lcasper
+
+csp_adpt_thresh_all2n_nop_freq_fop_SOURCES= adpt_thresh_all2n_nop_freq.c
+csp_adpt_thresh_all2n_nop_freq_fop_CFLAGS= -O2 -DENABLE_CSP -DTEST_RMA_OP_FOP
+csp_adpt_thresh_all2n_nop_freq_fop_LDFLAGS= -Wl,-rpath -Wl,$(libdir) 
+csp_adpt_thresh_all2n_nop_freq_fop_LDADD= -L$(libdir) -lcasper
+
+csp_adpt_thresh_all2n_nop_freq_cas_SOURCES= adpt_thresh_all2n_nop_freq.c
+csp_adpt_thresh_all2n_nop_freq_cas_CFLAGS= -O2 -DENABLE_CSP -DTEST_RMA_OP_CAS
+csp_adpt_thresh_all2n_nop_freq_cas_LDFLAGS= -Wl,-rpath -Wl,$(libdir) 
+csp_adpt_thresh_all2n_nop_freq_cas_LDADD= -L$(libdir) -lcasper
 
 csp_adpt_thresh_all2n_nop_freq_cput_SOURCES= adpt_thresh_all2n_nop_freq.c
 csp_adpt_thresh_all2n_nop_freq_cput_CFLAGS= -O2 -DENABLE_CSP -DTEST_RMA_OP_PUT -DTEST_RMA_CONTIG
