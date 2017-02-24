@@ -98,9 +98,13 @@ static int run_iteration(void)
     int dst;
     double t0, avg_total_time = 0.0, t_total = 0.0, avg_comp_time = 0.0;
     MPI_Info win_info = MPI_INFO_NULL;
+    MPI_Info async_info = MPI_INFO_NULL;
 
     MPI_Info_create(&win_info);
+    MPI_Info_create(&async_info);
+
     MPI_Info_set(win_info, (char *) "epoch_type", (char *) "lockall|fence");
+    MPI_Info_set(async_info, (char *) "symmetric", (char *) "true");
 
 #if defined(DISABLE_SHM)
     /* disable shm rma for original case because too heavy per-op lock contention */
@@ -150,6 +154,9 @@ static int run_iteration(void)
         }
 
         MPI_Barrier(MPI_COMM_WORLD);
+#if defined(ENABLE_CSP_ADPT)
+        MPI_Win_set_info(win, async_info);
+#endif
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
@@ -186,6 +193,7 @@ static int run_iteration(void)
 
     MPI_Win_free(&win);
     MPI_Info_free(&win_info);
+    MPI_Info_free(&async_info);
 
     return errs;
 }

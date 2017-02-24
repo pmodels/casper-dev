@@ -22,6 +22,7 @@ noinst_PROGRAMS = \
 	static_single_phase	\
 	static_single_phase_disable_shm	\
 	csp_static_single_phase	\
+	csp_adpt_single_phase	\
 	csp_adpt_thresh_all2all_nop_put	\
 	csp_adpt_thresh_all2all_nop_get	\
 	csp_adpt_thresh_all2all_nop_acc	\
@@ -194,3 +195,8 @@ csp_static_single_phase_SOURCES= static_single_phase.c
 csp_static_single_phase_CFLAGS= -O2 -DENABLE_CSP -mkl=sequential
 csp_static_single_phase_LDFLAGS= -Wl,-rpath -Wl,$(libdir) -mkl=sequential
 csp_static_single_phase_LDADD= -L$(libdir) -lcasper 
+
+csp_adpt_single_phase_SOURCES= static_single_phase.c
+csp_adpt_single_phase_CFLAGS= -O2 -DENABLE_CSP_ADPT -mkl=sequential
+csp_adpt_single_phase_LDFLAGS= -Wl,-rpath -Wl,$(libdir) -mkl=sequential
+csp_adpt_single_phase_LDADD= -L$(libdir) -lcasper 
