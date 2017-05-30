@@ -152,6 +152,25 @@ static int initialize_env(void)
         }
     }
 
+    /* Asynchronous progress enabled MPI communication modes */
+    CSP_ENV.async_modes = CSP_ASYNC_MODE_RMA;
+    val = getenv("CSP_ASYNC_MODE");
+    if (val && strlen(val)) {
+        char *vbs = NULL;
+
+        /* Force enables RMA. */
+        vbs = strtok(val, ",|;");
+        while (vbs != NULL) {
+            if (!strncmp(vbs, "rma", strlen("rma"))) {
+                CSP_ENV.async_modes |= (int) CSP_ASYNC_MODE_RMA;
+            }
+            else if (!strncmp(vbs, "pt2pt", strlen("pt2pt"))) {
+                CSP_ENV.async_modes |= (int) CSP_ASYNC_MODE_PT2PT;
+            }
+            vbs = strtok(NULL, ",|;");
+        }
+    }
+
 #if defined(CSP_ENABLE_RUNTIME_LOAD_OPT)
     CSP_ENV.load_opt = CSP_LOAD_OPT_RANDOM;
 
@@ -201,13 +220,16 @@ static int initialize_env(void)
 #endif
                       "    CSP_VERBOSE      = %s|%s|%s|%s|%s\n"
                       "    CSP_NG           = %d\n"
-                      "    CSP_ASYNC_CONFIG = %s\n",
+                      "    CSP_ASYNC_CONFIG = %s\n"
+                      "    CSP_ASYNC_MODE   = %s|%s\n",
                       (CSP_ENV.verbose & CSP_MSG_ERROR) ? "err" : "",
                       (CSP_ENV.verbose & CSP_MSG_WARN) ? "warn" : "",
                       (CSP_ENV.verbose & CSP_MSG_CONFIG_GLOBAL) ? "conf_g" : "",
                       (CSP_ENV.verbose & CSP_MSG_CONFIG_WIN) ? "conf_win" : "",
                       (CSP_ENV.verbose & CSP_MSG_INFO) ? "info" : "",
-                      CSP_ENV.num_g, (CSP_ENV.async_config == CSP_ASYNC_CONFIG_ON) ? "on" : "off");
+                      CSP_ENV.num_g, (CSP_ENV.async_config == CSP_ASYNC_CONFIG_ON) ? "on" : "off",
+                      (CSP_ENV.async_modes & CSP_ASYNC_MODE_RMA) ? "rma" : "",
+                      (CSP_ENV.async_modes & CSP_ASYNC_MODE_PT2PT) ? "pt2pt" : "");
 
 #if defined(CSP_ENABLE_RUNTIME_LOAD_OPT)
         CSP_msg_print(CSP_MSG_CONFIG_GLOBAL, "Runtime Load Balancing Options:  \n"
