@@ -138,6 +138,8 @@ typedef struct CSP_env_param {
 
     int verbose;                /* verbose level. print configuration information. */
     CSP_async_config_t async_config;
+    int offload_shmq_ncells;    /* number of free cells pre-allocated for offload shared queue.
+                                 * 8192 by default.*/
 } CSP_env_param_t;
 
 
