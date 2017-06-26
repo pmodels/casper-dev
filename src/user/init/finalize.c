@@ -32,9 +32,13 @@ static int destroy_proc(void)
     if (CSP_PROC.wgroup && CSP_PROC.wgroup != MPI_GROUP_NULL) {
         CSP_CALLMPI(JUMP, PMPI_Group_free(&CSP_PROC.wgroup));
     }
+    if (CSP_PROC.lgroup && CSP_PROC.lgroup != MPI_GROUP_NULL) {
+        CSP_CALLMPI(JUMP, PMPI_Group_free(&CSP_PROC.lgroup));
+    }
 
     CSP_PROC.local_comm = MPI_COMM_NULL;
     CSP_PROC.wgroup = MPI_GROUP_NULL;
+    CSP_PROC.lgroup = MPI_GROUP_NULL;
 
     /* user-specific objects */
     if (CSP_COMM_USER_WORLD && CSP_COMM_USER_WORLD != MPI_COMM_NULL) {

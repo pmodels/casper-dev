@@ -292,6 +292,7 @@ static int initialize_proc(void)
     CSP_reset_typed_proc();
 
     CSP_CALLMPI(JUMP, PMPI_Comm_group(MPI_COMM_WORLD, &CSP_PROC.wgroup));
+    CSP_CALLMPI(JUMP, PMPI_Comm_group(CSP_PROC.local_comm, &CSP_PROC.lgroup));
 
     /* Create a user comm_world including all the users,
      * user will access it instead of comm_world */
