@@ -10,4 +10,5 @@ libcasper_la_SOURCES += src/common/include/csp.h \
 			src/common/include/csp_thread.h \
 			src/common/include/csp_util.h   \
 			src/common/include/csp_offload.h \
+			src/common/include/csp_comm.h    \
 			src/common/include/csp_datatype.h
