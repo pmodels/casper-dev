@@ -12,3 +12,7 @@ libcasper_la_SOURCES += src/common/include/csp.h \
 			src/common/include/csp_offload.h \
 			src/common/include/csp_comm.h    \
 			src/common/include/csp_datatype.h
+
+if csp_have_topo_opt
+libcasper_la_SOURCES += src/common/include/csp_topo.h
+endif

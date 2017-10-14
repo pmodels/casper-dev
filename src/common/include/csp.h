@@ -21,6 +21,9 @@
 #if defined(CSP_ENABLE_THREAD_SAFE)
 #include "csp_thread.h"
 #endif
+#if defined(CSP_ENABLE_TOPO_OPT)
+#include "csp_topo.h"
+#endif
 
 /* #define CSP_ENABLE_GRANT_LOCK_HIDDEN_BYTE */
 
@@ -140,6 +143,12 @@ typedef struct CSP_env_param {
     CSP_async_config_t async_config;
     int offload_shmq_ncells;    /* number of free cells pre-allocated for offload shared queue.
                                  * 8192 by default.*/
+
+#if defined(CSP_ENABLE_TOPO_OPT)
+    struct {
+        CSP_topo_domain_type_t domain;
+    } topo;
+#endif
 } CSP_env_param_t;
 
 
@@ -184,6 +193,9 @@ typedef struct CSP_proc {
     int num_nodes;
     int wrank;
 
+    MPI_Comm wcomm;             /* MPI_COMM_WORLD with optimized topology.
+                                 * All internal access to comm_world should
+                                 * use this object.*/
     MPI_Comm local_comm;        /* Includes all processes on local node. */
     MPI_Group wgroup;
     MPI_Group lgroup;
