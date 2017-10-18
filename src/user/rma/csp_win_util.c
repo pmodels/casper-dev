@@ -158,15 +158,16 @@ int CSP_win_print_async_config(CSP_win * ug_win)
 #endif
     {
         if (user_rank == 0) {
-            const char *name = CSP_get_async_config_name(ug_win->info_args.async_config);
             CSP_INFO_PRINT(2, "CASPER Window: %s target async_config: all %s\n",
-                           ug_win->info_args.win_name, name);
+                           ug_win->info_args.win_name,
+                           CSP_get_async_config_name(ug_win->info_args.async_config));
         }
     }
 
     CSP_INFO_PRINT_FILE_PER_RANK(2, "CASPER Window %s-%d: target async_config\n",
                                  ug_win->info_args.win_name, ug_win->adapt_remote_exed);
 
+#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
     /* The root user gathers the frequency number on all targets and print in file. */
     if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
         CSP_async_stat stat = CSP_adpt_get_async_stat();
@@ -176,6 +177,7 @@ int CSP_win_print_async_config(CSP_win * ug_win)
                                      CSP_RM[CSP_RM_COMM_FREQ].last_interval,
                                      ((stat == CSP_ASYNC_ON) ? "on" : "off"));
     }
+#endif
 
 #ifdef CSP_ENABLE_ADAPT_PROF
     CSP_adapt_prof_dump();

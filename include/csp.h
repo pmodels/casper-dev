@@ -991,7 +991,7 @@ typedef enum {
 } CSP_adpt_prof_op;
 
 #ifndef CSP_ENABLE_RUNTIME_ASYNC_SCHED
-#define CSP_ADAPT_PROF_INC_TO_USER_CNT(op)
+#define CSP_ADAPT_PROF_INC_TO_USER_CNT(user_rank, op)
 #define CSP_ADAPT_PROF_INC_TO_GHOST_CNT(op)
 #endif
 
