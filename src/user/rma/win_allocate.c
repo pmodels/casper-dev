@@ -80,6 +80,13 @@ static int read_win_info(MPI_Info info, CSP_win * ug_win)
         if (mpi_errno != MPI_SUCCESS)
             goto fn_fail;
 
+        /* TODO: workaround for info key change. Need clean when merge with master. */
+        if (info_flag == 0) {
+            mpi_errno = PMPI_Info_get(info, "epochs_used", MPI_MAX_INFO_VAL, info_value, &info_flag);
+            if (mpi_errno != MPI_SUCCESS)
+                goto fn_fail;
+        }
+
         if (info_flag == 1) {
             int user_epoch_type = 0;
             char *type = NULL;
