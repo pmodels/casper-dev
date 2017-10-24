@@ -36,6 +36,14 @@ double *winbuf, locbuf[SIZE];
 int rank, nprocs;
 int NOP = 1;
 
+const char *OP_TYPE_NM[3] = { "ACC", "PUT", "GET" };
+enum {
+    OP_ACC,
+    OP_PUT,
+    OP_GET
+};
+int OP_TYPE = OP_ACC;
+
 static void usleep_by_count(unsigned long us)
 {
     double start = MPI_Wtime() * 1000 * 1000;
@@ -69,9 +77,24 @@ static int run_test(int time)
 
         // rank 0 does RMA communication
         if (rank == 0) {
-            for (i = 0; i < NOP; i++)
-                MPI_Accumulate(&locbuf[0], 1, MPI_DOUBLE, dst, 0, 1, MPI_DOUBLE, MPI_SUM, win);
-            MPI_Win_flush_all(win);
+            switch(OP_TYPE) {
+            case OP_PUT:
+                for (i = 0; i < NOP; i++)
+                    MPI_Put(&locbuf[0], 1, MPI_DOUBLE, dst, 0, 1, MPI_DOUBLE, win);
+                MPI_Win_flush_all(win);
+                break;
+            case OP_GET:
+                for (i = 0; i < NOP; i++)
+                    MPI_Get(&locbuf[0], 1, MPI_DOUBLE, dst, 0, 1, MPI_DOUBLE, win);
+                MPI_Win_flush_all(win);
+                break;
+            case OP_ACC:
+            default:
+                for (i = 0; i < NOP; i++)
+                    MPI_Accumulate(&locbuf[0], 1, MPI_DOUBLE, dst, 0, 1, MPI_DOUBLE, MPI_SUM, win);
+                MPI_Win_flush_all(win);
+                break;
+            }
         }
         // rank 1 does sleep and test
         else {
@@ -101,12 +124,12 @@ static int run_test(int time)
     if (rank == 0) {
 #ifdef ENABLE_CSP
         fprintf(stdout,
-                "casper: comp_size %d num_op %d nprocs %d total_time %.2lf\n",
-                time, NOP, nprocs, t_total * 1000 * 1000);
+                "casper: %s, comp_size %d num_op %d nprocs %d total_time %.2lf\n",
+                OP_TYPE_NM[OP_TYPE], time, NOP, nprocs, t_total * 1000 * 1000);
 #else
         fprintf(stdout,
-                "orig: comp_size %d num_op %d nprocs %d total_time %.2lf\n",
-                time, NOP, nprocs, t_total * 1000 * 1000);
+                "orig: %s, comp_size %d num_op %d nprocs %d total_time %.2lf\n",
+                OP_TYPE_NM[OP_TYPE], time, NOP, nprocs, t_total * 1000 * 1000);
 #endif
     }
 
@@ -130,6 +153,14 @@ int main(int argc, char *argv[])
     }
     if (argc >= 5) {
         NOP = atoi(argv[4]);
+    }
+    if (argc >= 6) {
+        OP_TYPE = atoi(argv[5]);
+    }
+    if ((OP_TYPE != OP_ACC) && (OP_TYPE != OP_PUT) && (OP_TYPE != OP_GET)) {
+        if (rank == 0)
+            fprintf(stderr, "Wrong op type %d\n", OP_TYPE);
+        MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
@@ -157,9 +188,9 @@ int main(int argc, char *argv[])
     MPI_Win_allocate(sizeof(double), sizeof(double), win_info, MPI_COMM_WORLD, &winbuf, &win);
 
     /* reset window */
-    MPI_Win_lock(MPI_LOCK_EXCLUSIVE, rank, 0, win);
+    MPI_Win_lock_all(0, win);
     winbuf[0] = 0.0;
-    MPI_Win_unlock(rank, win);
+    MPI_Win_unlock_all(win);
 
     debug_printf("[%d]win_allocate done\n", rank);
 
