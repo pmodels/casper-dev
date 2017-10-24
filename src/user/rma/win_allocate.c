@@ -128,8 +128,6 @@ static int read_win_info(MPI_Info info, CSP_win * ug_win)
         PMPI_Comm_rank(ug_win->user_comm, &user_rank);
         if (user_rank == 0) {
             const char *epoch_type_name = CSP_get_epoch_types_name(ug_win->info_args.epoch_type);
-            const char *async_config_name =
-                CSP_get_async_config_name(ug_win->info_args.async_config);
 
             CSP_INFO_PRINT(4, "CASPER Window: %s \n"
                            "    no_local_load_store = %s\n"
@@ -137,7 +135,8 @@ static int read_win_info(MPI_Info info, CSP_win * ug_win)
                            "    async_config = %s\n",
                            ug_win->info_args.win_name,
                            (ug_win->info_args.no_local_load_store ? "TRUE" : " FALSE"),
-                           epoch_type_name, async_config_name);
+                           epoch_type_name,
+                           CSP_get_async_config_name(ug_win->info_args.async_config));
 
             CSP_INFO_PRINT_FILE_START(1, ug_win->info_args.win_name);
             CSP_INFO_PRINT_FILE_APPEND(1, "CASPER Window: %s \n"
@@ -146,7 +145,8 @@ static int read_win_info(MPI_Info info, CSP_win * ug_win)
                                        "    async_config = %s\n\n",
                                        ug_win->info_args.win_name,
                                        (ug_win->info_args.no_local_load_store ? "TRUE" : " FALSE"),
-                                       epoch_type_name, async_config_name);
+                                       epoch_type_name,
+                                       CSP_get_async_config_name(ug_win->info_args.async_config));
         }
     }
 
