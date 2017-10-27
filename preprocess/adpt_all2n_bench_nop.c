@@ -21,6 +21,7 @@
 #define ITER_S 500
 #define ITER_M 200
 #define ITER_L 100
+#define ITER_H 50
 #define NOP 1
 
 #define DLEN2 4
@@ -238,12 +239,16 @@ static void create_datatype(void)
 #endif
 }
 
-/* adjust interval when diff becomes small */
-#define DIFF_REDUCE_ITER 30.0
 /* report range */
-#define DIFF_REPORT 10.0
+#define DIFF_REPORT 5.0
 /* stop after sufficient reports */
 #define MAX_NREPORTS 3
+/* compute time adjusting rate. */
+#define COMP_ADJUST_RATE 1.5
+/* stop benchmark if cannot get report in x times */
+#define MAX_BENCH_ITER 10
+/* no reason to continue if it is already 99% communication */
+#define MAX_FREQ 99
 
 static int nreports = 0;
 
@@ -300,9 +305,11 @@ int main(int argc, char *argv[])
 {
     int nop = NOP, i;
     int ng = 1;
-    char *ng_str = "";
-    double diff_report = DIFF_REPORT, diff_reduce_iter = DIFF_REDUCE_ITER;
-    int backwarded = 0;
+    char *ng_str = NULL;
+    double diff_report = DIFF_REPORT;
+    int backwarded = 0, forwarded = 0;
+    int bench_iter = 0;
+    double prev_diff_time = 0, prev_diff = 0;
 
     MPI_Init(&argc, &argv);
 
@@ -337,7 +344,7 @@ int main(int argc, char *argv[])
         goto exit;
     }
 
-    if (comp_time < 1 || sub_dlen < 1 || sub_dlen > DLEN || ng < 1) {
+    if (comp_time < 0 || sub_dlen < 1 || sub_dlen > DLEN || ng < 1) {
         if (rank == 0)
             fprintf(stderr,
                     "Invalid input arguments: comp_time = %d, sub_dlen = %d, ng = %d\n",
@@ -348,9 +355,6 @@ int main(int argc, char *argv[])
     target_bits = malloc(sizeof(int) * nprocs);
     memset(target_bits, 0, sizeof(int) * nprocs);
     set_target_bits();
-
-    diff_report = DIFF_REPORT / (ng * 0.8);     /* reduce report range for large ng */
-    diff_reduce_iter = (DIFF_REDUCE_ITER / (ng * 0.8)); /* similar for fine-grained adjusting range */
 
 #if defined(TEST_RMA_OP_FOP) || defined(TEST_RMA_OP_CAS)
     bufsize = 1;
@@ -368,9 +372,9 @@ int main(int argc, char *argv[])
     }
 
     nop = nop_min;
-    while (nop <= nop_max && nop >= nop_min) {
-        double on_time = 0, off_time = 0, diff = 0;
-
+    do {
+        double on_time = 0, off_time = 0, diff = 0, diff_time = 0, abs_diff_time = 0;
+        double on_op_time = 0, off_op_time = 0;
         MPI_Barrier(MPI_COMM_WORLD);
         on_time = run_with_async_config("on", nop);
 
@@ -378,51 +382,97 @@ int main(int argc, char *argv[])
         off_time = run_with_async_config("off", nop);
 
         /* off_time and on_time are already averaged. */
-        diff = (off_time - on_time) / off_time * 100;
+        diff_time = (off_time - on_time);
+        abs_diff_time = fabs(diff_time);
+        on_op_time = (on_time - comp_time) / nop;
+        off_op_time = (off_time - comp_time) / nop;
+        diff = diff_time / off_time * 100;
 
         /* report results for (-10%) < diff < (10%) */
         if (fabs(diff) < diff_report) {
             report_output(ng, nop, on_time, diff);
         }
-        else if (verbose && rank == 0) {
+        if (verbose && rank == 0) {
             fprintf(stdout,
-                    "verbose: nop %d bufsize %d iter %d on_time %.2lf off_time %.2lf diff %.2lf freq %.1f\n",
-                    nop, bufsize, ITER, on_time, off_time, diff,
-                    (1 - comp_time / on_time) * 100 /*comm freq */);
+                    "verbose (%d): nop %d bufsize %d iter %d comp_time %d on_time %.2lf off_time %.2lf "
+                    "on_op_time %.2lf off_op_time %.2lf diff_time %.2lf diff %.2lf freq %.1f\n",
+                    bench_iter, nop, bufsize, ITER, comp_time, on_time, off_time, on_op_time,
+                    off_op_time, diff_time, diff, (1 - comp_time / on_time) * 100 /*comm freq */);
             fflush(stdout);
         }
 
         /* stop test */
         if ((on_time > off_time && fabs(diff) >= diff_report && nreports > 0)
-            || nreports > MAX_NREPORTS) {
+            || nreports >= MAX_NREPORTS) {
             break;
         }
 
         /* forwarding */
         if (backwarded == 0) {
-            /* when diff becomes small or negative, reduce interval */
-            if (diff < diff_reduce_iter) {
-                /* when diff directly increases to negative with 0 report,
-                 * start backward with smaller interval. */
-                if (diff < 0 && nreports == 0) {
-                    nop -= 1;
-                    backwarded = 1;
-                }
-                else {
-                    nop += nop_iter;
-                }
+            /* increase compute time if on_time > off_time at beginning */
+            if (forwarded == 0 && (on_time > off_time
+#if !defined(TEST_RMA_FLUSH_ALL)
+                                   /* we also do the same adjustment if single blocking operation cost is larger than diff time. */
+                                   || on_op_time >= abs_diff_time
+#endif
+            )) {
+                double adj_rate = COMP_ADJUST_RATE, plus_adj_rate = 0;
+                comp_time *= adj_rate;
+
+                /* we are increasing the initial diff, try accelerate it based on the increasing pace. */
+                plus_adj_rate = diff_time / (diff_time - prev_diff_time);
+                if (plus_adj_rate > 1)
+                    comp_time *= plus_adj_rate;
+
+                prev_diff_time = diff_time;
             }
-            else if (backwarded == 0) {
-                nop *= nop_iter;
+            /* increase nop if on_time < off_time. */
+            else if (diff > 0) {
+                /* diff is not reducing with more nops, we should stop and report what is the end. */
+                if (forwarded && prev_diff > 0 && diff >= prev_diff) {
+                    report_output(ng, nop, on_time, diff);
+                    break;
+                }
+
+                /* similarly, if the communication time already takes 99%, we should stop. */
+                if (forwarded && (1 - comp_time / on_time) * 100 > MAX_FREQ) {
+                    report_output(ng, nop, on_time, diff);
+                    break;
+                }
+
+                nop_iter = abs_diff_time / on_op_time;
+                if (forwarded) {
+                    /* we are reducing the diff, try accelerate it based on the reducing pace. */
+                    int new_nop_iter = diff / (prev_diff - diff);
+                    if (new_nop_iter > nop_iter)
+                        nop_iter = new_nop_iter;
+                }
+                nop += (nop_iter < 1 ? 1 : nop_iter);
+
+                prev_diff_time = diff_time;
+                prev_diff = diff;
+                forwarded = 1;
+            }
+            /* when diff directly increases to negative with 0 report,
+             * start backward with smaller interval. */
+            else if (diff <= 0 && nreports == 0) {
+                backwarded = 1;
+                nop -= 1;
+            }
+            else {
+                break;
             }
         }
-        /* slightly increase diff in backward within range */
-        else if (diff < diff_reduce_iter) {
-            nop -= 1;
-        }
-        /* diff increases out of range in backward */
+        /* backward */
         else {
-            break;
+            if (on_time >= off_time) {
+                /* only do small jump at backward because we are very close. */
+                nop -= 1;
+            }
+            else {
+                /* give up if on_time < off_time again. */
+                break;
+            }
         }
 
         /* reduce iteration when single run becomes expensive (time in us) */
@@ -432,7 +482,10 @@ int main(int argc, char *argv[])
         if ((on_time > 25000 || off_time > 25000) && ITER > ITER_L) {
             ITER = ITER_L;
         }
-    }
+        if ((on_time > 50000 || off_time > 50000) && ITER > ITER_H) {
+            ITER = ITER_H;
+        }
+    } while (nop <= nop_max && nop >= nop_min && bench_iter++ < MAX_BENCH_ITER);
 
     if ((nop == nop_max || nreports == 0) && rank == 0) {
         fprintf(stderr,

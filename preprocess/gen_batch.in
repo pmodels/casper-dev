@@ -1,0 +1,173 @@
+#!/bin/bash
+
+abs_top_builddir=@abs_top_builddir@
+tpath=$abs_top_builddir/preprocess
+#ops="acc gacc get put"
+#dts="contig 3d"
+ops="fop cas"
+dts="contig"
+blkmds="blk nonblk"
+szs="s m l"
+prefix="job."
+jobtpl="preprocessing-job-tpl"
+nnodes=1
+ntnodes=1
+ng=1
+ppn=36
+jobid=0
+
+mpiexec="mpirun -ppn $ppn -np"
+if [ "x$MPIEXEC" != "x" ]; then
+	mpiexec=$MPIEXEC
+fi
+
+while getopts "hn:p:g:t:f:l:" opt; do
+    case "$opt" in
+    h)
+        echo "Usage:"
+				echo "MPIEXEC=\"srun -N <number of nodes> -n\" \\"
+				echo "  ./get_batch.sh -n <number of nodes> -p <ppn> -g <number of ghosts> -t <number of target nodes> -l <job template file>"
+        exit
+        ;;
+    n)  nnodes=$OPTARG
+        ;;
+    t)  ntnodes="$OPTARG"
+        ;;
+    p)  ppn=$OPTARG
+        ;;
+    g)  ng=$OPTARG
+        ;;
+		l)  jobtpl=$OPTARG
+				if [ ! -f $jobtpl ]; then
+					echo "Cannot find jobtpl <$jobtpl>"
+					exit
+				fi
+				;;
+    esac
+done
+
+function gen_test
+{
+	np=$1
+	nop=$2
+	cptime=$3
+	len=$4
+	iter=$5
+	nt=$6
+	echo "SECONDS=0"
+	echo "start=\$SECONDS"
+	echo "echo \"[$jobid] $mpiexec $np \$test $nop 1024 2 $cptime $len $iter $nt\""
+	echo "$mpiexec $np \$test $nop 1024 2 $cptime $len $iter $nt"
+	echo "end=\$(( SECONDS - start ))"
+	echo "echo \"[$jobid] jobtime=\$end\""
+	echo ""
+	let jobid+=1
+}
+function smsg_params
+{
+	np=$1
+	nt=$2
+	nn=$3
+	iter=200
+	sublens="1 16 32"
+	if [ "$op" = "fop" ] || [ "$op" = "cas" ]; then
+			sublens="1"
+	fi
+	nops="1 16 64"
+	for nop in $nops; do
+		let cptime=100*$ppn*$nop
+		for len in $sublens; do
+			gen_test $np $nop $cptime $len $iter $nt
+		done
+	done
+}
+
+function mmsg_params
+{
+	np=$1
+	nt=$2
+	nn=$3
+	iter=100
+	sublens="128 512" # *2*2*sizeof(double)
+	nops="1 4 16"
+	for nop in $nops; do
+		let cptime=200*$ppn*$nop
+		for len in $sublens; do
+			gen_test $np $nop $cptime $len $iter $nt
+		done
+	done
+}
+
+function lmsg_params
+{
+	np=$1
+	nt=$2
+	nn=$3
+	iter=50
+	sublens="1024" # *2*2*sizeof(double)
+	nops="1 4 8"
+	for nop in $nops; do
+		let cptime=400*$ppn*$nop
+		for len in $sublens; do
+			gen_test $np $nop $cptime $len $iter $nt
+		done
+	done
+}
+
+function print_header
+{
+	jobfile=$1
+	blk=$2
+	dt=$3
+	op=$4
+	nn=$5
+	ppn=$6
+	ng=$7
+	tname="$tpath/csp_adpt_all2n_bench_nop_$blk""_$dt""_$op"
+	if [ ! -f $tname ]; then
+		echo "Cannot find $tname"
+		exit
+	fi
+	cat $jobtpl > $jobfile
+	sed -i "s/@jobname@/$jobname/g" $jobfile
+	sed -i "s/@nnodes@/$nn/g" $jobfile
+	sed -i "s/@ppn@/$ppn/g" $jobfile
+
+	echo "export CSP_VERBOSE=1" >> $jobfile
+	echo "export CSP_NG=$ng" >> $jobfile
+	echo "test=$tname" >> $jobfile
+}
+
+i=0
+for op in $ops; do
+	for dt in $dts; do
+		for blk in $blkmds; do
+			nn=$nnodes
+			nt=$ntnodes
+			let np=$nn*$ppn
+
+			jobprefix="np$np""nn$nn""nt$nt""g$ng-$blk-$dt-$op"
+			for sz in $szs; do
+				jobname="$jobprefix-$sz""sz"
+				jobfile="$prefix$jobname"
+				print_header $jobfile $blk $dt $op $nn $ppn $ng
+				echo "# $sz message sets ====" >> $jobfile
+				case $sz in
+					s)
+						smsg_params $np $nt $nn >> $jobfile
+						;;
+					m)
+						mmsg_params $np $nt $nn >> $jobfile
+						;;
+					l)
+						lmsg_params $np $nt $nn >> $jobfile
+						;;
+				esac
+				echo "[$i] $jobfile"
+				let i+=1
+			done
+		done
+	done
+done
+
+
