@@ -12,6 +12,8 @@ include_HEADERS = include/casper.h
 libcasper_la_SOURCES = src/mpi_wrap.c	\
                     src/casper.c \
                     src/user/func.c \
+                    src/user/profile.c \
+                    src/user/profile_f.c \
                     src/user/adapt.c \
                     src/user/rma/win_allocate.c \
                     src/user/rma/win_create.c \

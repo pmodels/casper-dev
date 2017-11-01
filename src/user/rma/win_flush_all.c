@@ -153,7 +153,10 @@ int MPI_Win_flush_all(MPI_Win win)
     int mpi_errno = MPI_SUCCESS;
 
     CSP_DBG_PRINT_FCNAME();
+    CSP_FUNC_PROFILE_TIMING_START(MPI_WIN_FLUSH_ALL_GADPT);
     CSP_MPI_FUNC_START_ROUTINE();
+    CSP_FUNC_PROFILE_TIMING_END(MPI_WIN_FLUSH_ALL_GADPT);
+    CSP_FUNC_PROFILE_TIMING_START(MPI_WIN_FLUSH_ALL);
 
     CSP_fetch_ug_win_from_cache(win, ug_win);
 
@@ -200,6 +203,8 @@ int MPI_Win_flush_all(MPI_Win win)
 #endif
 
   fn_exit:
+    CSP_FUNC_PROFILE_TIMING_END(MPI_WIN_FLUSH_ALL);
+    CSP_FUNC_PROFILE_COUNTER_INC(MPI_WIN_FLUSH_ALL);
     CSP_MPI_FUNC_END_ROUTINE();
     return mpi_errno;
 

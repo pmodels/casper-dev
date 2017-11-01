@@ -261,6 +261,7 @@ int CSP_win_coll_sched_async_config(CSP_win * ug_win)
     CSP_async_stat my_async_stat = CSP_ASYNC_NONE;
     int user_nprocs, user_rank, i;
 
+    CSP_FUNC_PROFILE_TIMING_START(UTIL_COLL_ASYNC_CONFIG);
     PMPI_Comm_size(ug_win->user_comm, &user_nprocs);
     PMPI_Comm_rank(ug_win->user_comm, &user_rank);
 
@@ -324,6 +325,8 @@ int CSP_win_coll_sched_async_config(CSP_win * ug_win)
         CSP_win_print_async_config(ug_win);
 
   fn_exit:
+    CSP_FUNC_PROFILE_TIMING_END(UTIL_COLL_ASYNC_CONFIG);
+    CSP_FUNC_PROFILE_COUNTER_INC(UTIL_COLL_ASYNC_CONFIG);
     if (tmp_gather_buf)
         free(tmp_gather_buf);
     return mpi_errno;

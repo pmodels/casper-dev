@@ -25,6 +25,7 @@ int MPI_Finalize(void)
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
     CSP_adpt_finalize();
 #endif
+    CSP_PROFILE_DESTROY();
 
     if (CSP_ENV.file_verbose >= 2) {
         if (CSP_global_verbose_fp != NULL) {

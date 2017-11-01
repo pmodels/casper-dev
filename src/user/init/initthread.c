@@ -515,6 +515,7 @@ int MPI_Init_thread(int *argc, char ***argv, int required, int *provided)
         CSP_init_win_cache();
         CSP_init_win_name_cache();
         CSP_rm_reset_all();
+        CSP_PROFILE_INIT();
     }
     /* Ghost processes */
     /* TODO: Ghost process should not run user program */
@@ -554,6 +555,7 @@ int MPI_Init_thread(int *argc, char ***argv, int required, int *provided)
 #ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
     CSP_adpt_finalize();
 #endif
+    CSP_PROFILE_DESTROY();
 
     if (CSP_ENV.file_verbose >= 2) {
         if (CSP_global_verbose_fp != NULL) {

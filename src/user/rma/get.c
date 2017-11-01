@@ -220,6 +220,7 @@ int MPI_Get(void *origin_addr, int origin_count,
 
     CSP_DBG_PRINT_FCNAME();
     CSP_MPI_FUNC_START_ROUTINE();
+    CSP_FUNC_PROFILE_TIMING_START(MPI_GET);
 
     CSP_fetch_ug_win_from_cache(win, ug_win);
 
@@ -233,6 +234,9 @@ int MPI_Get(void *origin_addr, int origin_count,
         mpi_errno = PMPI_Get(origin_addr, origin_count, origin_datatype,
                              target_rank, target_disp, target_count, target_datatype, win);
     }
+
+    CSP_FUNC_PROFILE_TIMING_END(MPI_GET);
+    CSP_FUNC_PROFILE_COUNTER_INC(MPI_GET);
 
     CSP_MPI_FUNC_END_ROUTINE();
     return mpi_errno;
