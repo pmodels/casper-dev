@@ -12,6 +12,8 @@ noinst_PROGRAMS = \
 	csp_lockall_overhead_async	\
 	async_2np	\
 	csp_async_2np	\
+	async_2np_contig	\
+	csp_async_2np_contig	\
 	async_all2all	\
 	csp_async_all2all	\
 	lock_overhead	\
@@ -153,6 +155,14 @@ csp_async_2np_SOURCES= async_2np.c
 csp_async_2np_LDADD= -L$(libdir) -lcasper
 csp_async_2np_LDFLAGS= -Wl,-rpath -Wl,$(libdir)
 csp_async_2np_CFLAGS= -O2 -DENABLE_CSP
+
+async_2np_contig_SOURCES= async_2np.c
+async_2np_contig_CFLAGS= -O2 -DTEST_RMA_CONTIG
+
+csp_async_2np_contig_SOURCES= async_2np.c
+csp_async_2np_contig_LDADD= -L$(libdir) -lcasper
+csp_async_2np_contig_LDFLAGS= -Wl,-rpath -Wl,$(libdir)
+csp_async_2np_contig_CFLAGS= -O2 -DENABLE_CSP -DTEST_RMA_CONTIG
 
 async_all2all_CFLAGS= -O2
 csp_async_all2all_SOURCES= async_all2all.c
