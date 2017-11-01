@@ -15,9 +15,11 @@ const char *CSP_profile_func_names[PROF_MAX_NUM_PROFILE_FUNC] = {
     "CSP_MPI_Get",
     "CSP_MPI_Acc",
     "CSP_MPI_Win_flush_all",
-    "CSP_MPI_Win_flush",
     "CSP_MPI_Win_flush_all_gadpt",
+    "CSP_MPI_Win_flush_all_main",
+    "CSP_MPI_Win_flush",
     "CSP_MPI_Win_flush_gadpt",
+    "CSP_MPI_Win_flush_main",
     "CSP_UTIL_coll_async_config"
 };
 
