@@ -29,7 +29,7 @@ double CSP_prof_timings[PROF_MAX_NUM_PROFILE_FUNC];
 void CSP_profile_init(void)
 {
     int rank, i;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    PMPI_Comm_rank(CSP_COMM_USER_WORLD, &rank);
 
     for (i = 0; i < PROF_MAX_NUM_PROFILE_FUNC; i++)
         CSP_prof_counters[i] = 0;
@@ -50,7 +50,7 @@ void CSP_profile_reset_counter(void)
 {
     int i, rank;
 
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    PMPI_Comm_rank(CSP_COMM_USER_WORLD, &rank);
     if (rank == 0) {
         fprintf(stderr, "CSP counter reset\n");
         fflush(stderr);
@@ -64,7 +64,7 @@ void CSP_profile_reset_timing(void)
 {
     int i, rank;
 
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    PMPI_Comm_rank(CSP_COMM_USER_WORLD, &rank);
     if (rank == 0) {
         fprintf(stderr, "CSP timing reset\n");
         fflush(stderr);
@@ -79,11 +79,11 @@ void CSP_profile_print_timing(char *name)
     int i, rank, size;
     double timers_avg[PROF_MAX_NUM_PROFILE_FUNC];
 
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    PMPI_Comm_rank(CSP_COMM_USER_WORLD, &rank);
+    PMPI_Comm_size(CSP_COMM_USER_WORLD, &size);
 
-    MPI_Reduce(CSP_prof_timings, timers_avg, PROF_MAX_NUM_PROFILE_FUNC, MPI_DOUBLE, MPI_SUM, 0,
-               MPI_COMM_WORLD);
+    PMPI_Reduce(CSP_prof_timings, timers_avg, PROF_MAX_NUM_PROFILE_FUNC, MPI_DOUBLE, MPI_SUM, 0,
+                CSP_COMM_USER_WORLD);
 
     if (rank == 0) {
         for (i = 0; i < PROF_MAX_NUM_PROFILE_FUNC; i++) {
@@ -102,11 +102,11 @@ void CSP_profile_print_counter(char *name)
     int i, dst, rank;
     int counters_avg[PROF_MAX_NUM_PROFILE_FUNC];
 
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_rank(CSP_COMM_USER_WORLD, &rank);
     memset(counters_avg, 0, sizeof(int) * PROF_MAX_NUM_PROFILE_FUNC);
 
-    MPI_Reduce(CSP_prof_counters, counters_avg, PROF_MAX_NUM_PROFILE_FUNC, MPI_INT, MPI_SUM, 0,
-               MPI_COMM_WORLD);
+    PMPI_Reduce(CSP_prof_counters, counters_avg, PROF_MAX_NUM_PROFILE_FUNC, MPI_INT, MPI_SUM, 0,
+                CSP_COMM_USER_WORLD);
 
     if (rank == 0) {
         for (i = 0; i < PROF_MAX_NUM_PROFILE_FUNC; i++) {

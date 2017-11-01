@@ -19,8 +19,6 @@ int MPI_Win_flush(int target_rank, MPI_Win win)
     int is_self_flushed CSP_ATTRIBUTE((unused)) = 0;
     int j CSP_ATTRIBUTE((unused));
 
-    CSP_FUNC_PROFILE_TIMING_START(MPI_WIN_FLUSH);
-
     CSP_DBG_PRINT_FCNAME();
     CSP_FUNC_PROFILE_TIMING_START(MPI_WIN_FLUSH_GADPT);
     CSP_MPI_FUNC_START_ROUTINE();
@@ -132,7 +130,6 @@ int MPI_Win_flush(int target_rank, MPI_Win win)
     CSP_MPI_FUNC_END_ROUTINE();
 
     CSP_FUNC_PROFILE_COUNTER_INC(MPI_WIN_FLUSH);
-    CSP_FUNC_PROFILE_TIMING_END(MPI_WIN_FLUSH);
     return mpi_errno;
 
   fn_fail:

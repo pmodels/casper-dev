@@ -31,11 +31,11 @@ extern void CSP_profile_init(void);
 #define CSP_PROFILE_INIT CSP_profile_init
 #define CSP_PROFILE_DESTROY CSP_profile_destroy
 
-#define CSP_FUNC_PROFILE_TIMING_START(func) double _profile_##func##_time_start = MPI_Wtime();
+#define CSP_FUNC_PROFILE_TIMING_START(func) double _profile_##func##_time_start = PMPI_Wtime();
 #define CSP_FUNC_PROFILE_TIMING_END(func) {   \
     CSP_assert(PROF_##func < PROF_MAX_NUM_PROFILE_FUNC);             \
     if (PROF_##func >= 0 && PROF_##func < PROF_MAX_NUM_PROFILE_FUNC) \
-        CSP_prof_timings[PROF_##func] += MPI_Wtime() - _profile_##func##_time_start;   \
+        CSP_prof_timings[PROF_##func] += PMPI_Wtime() - _profile_##func##_time_start;   \
 }
 
 #define CSP_FUNC_PROFILE_COUNTER_INC(func) {  \
