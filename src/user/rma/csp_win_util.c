@@ -167,7 +167,7 @@ int CSP_win_print_async_config(CSP_win * ug_win)
     CSP_INFO_PRINT_FILE_PER_RANK(2, "CASPER Window %s-%d: target async_config\n",
                                  ug_win->info_args.win_name, ug_win->adapt_remote_exed);
 
-#ifdef CSP_ENABLE_RUNTIME_ASYNC_SCHED
+#if defined(CSP_ENABLE_RUNTIME_ASYNC_SCHED) && !defined(CSP_ENABLE_FAST)
     /* The root user gathers the frequency number on all targets and print in file. */
     if (ug_win->info_args.async_config == CSP_ASYNC_CONFIG_AUTO) {
         CSP_async_stat stat = CSP_adpt_get_async_stat();

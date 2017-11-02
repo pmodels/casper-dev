@@ -84,10 +84,12 @@ CSP_async_stat CSP_adpt_sched_async_stat(void)
     }
 #endif
 
+#ifndef CSP_ENABLE_FAST
     CSP_RM[CSP_RM_COMM_FREQ].last_time = time;
     CSP_RM[CSP_RM_COMM_FREQ].last_interval = interval;
     CSP_RM[CSP_RM_COMM_FREQ].last_freq = freq;
     CSP_RM[CSP_RM_COMM_FREQ].reported_flag = 0;
+#endif
 
     /* update ghost caches if my status is changed */
     if (CSP_ENV.async_sched_level == CSP_ASYNC_SCHED_ANYTIME && old_stat != CSP_MY_ASYNC_STAT) {

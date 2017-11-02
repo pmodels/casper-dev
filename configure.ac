@@ -72,6 +72,18 @@ if test "$enable_epochstat_check" = "yes"; then
    AC_DEFINE(CSP_ENABLE_EPOCH_STAT_CHECK,1,[Define if disable epoch status check])
 fi
 
+# Fast implementation
+AC_ARG_ENABLE(fast, AC_HELP_STRING([--enable-fast],
+                 [Enable fast implementation. This disables some verbose code used for 
+                 info output or strict error checking.]),
+                 [ enable_fast=$enableval ],
+                 [ enable_fast=no ])
+AC_MSG_CHECKING(fast implementation support)
+AC_MSG_RESULT($enable_fast)
+if test "$enable_fast" = "yes"; then
+   AC_DEFINE(CSP_ENABLE_FAST,1,[Define if enable the fast implementation])
+fi
+
 # External MPL
 AC_ARG_WITH(mpl, [AC_HELP_STRING([--with-mpl[=DIR]],
                 [Use the selected MPL installation; Header file mpl_timer.h should be in 
