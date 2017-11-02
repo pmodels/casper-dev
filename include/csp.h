@@ -13,9 +13,6 @@
 #include <mpi.h>
 #include <casperconf.h>
 
-#include "profile.h"
-#include "rm.h"
-
 /* #define CSP_ENABLE_GRANT_LOCK_HIDDEN_BYTE */
 
 /* #define CSP_ENABLE_LOCAL_LOCK_OPT */
@@ -71,6 +68,70 @@
 #ifndef CSP_align
 #define CSP_align(val, align) (((val) + (align) - 1) & ~((align) - 1))
 #endif
+
+#ifdef CSP_MPL_TIMER
+#ifdef HAVE_MPL_H
+#include <mpl.h>
+#endif
+typedef MPL_time_t CSP_time_t;
+static inline CSP_time_t CSP_time(void)
+{
+    MPL_time_t t;
+    MPL_wtime(&t);
+    return t;
+}
+/* return = t2 - t1 */
+static inline double CSP_time_diff(CSP_time_t t1, CSP_time_t t2)
+{
+    double diff;
+    MPL_wtime_diff(&t1, &t2, &diff);
+    return diff;
+}
+/* t3 += (t2 - t1) */
+static inline void CSP_time_acc(CSP_time_t t1, CSP_time_t t2, CSP_time_t *t3)
+{
+    MPL_wtime_acc(&t1, &t2, t3);
+}
+static inline double CSP_time_todouble(CSP_time_t t) {
+    double d;
+    MPL_wtime_todouble(&t, &d);
+    return d;
+}
+extern int CSP_MY_RANK_IN_WORLD;
+static inline void CSP_time_init(void)
+{
+    double wtick = 0;
+    double wtick_avg = 0, wtick_max, wtick_min;
+
+    MPL_wtime_init();
+    MPL_wtick(&wtick);
+
+    wtick *= 1000000.0; /* microseconds per tick */
+    PMPI_Reduce(&wtick, &wtick_max, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    PMPI_Reduce(&wtick, &wtick_min, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
+    PMPI_Reduce(&wtick, &wtick_avg, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    if (CSP_MY_RANK_IN_WORLD == 0) {
+        int nprocs = 0;
+
+        PMPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+        wtick_avg /= nprocs;
+        fprintf(stdout, "CSP timer init: wtick(us/tick) min %lf, max %lf, avg %lf\n",
+                wtick_min, wtick_max, wtick_avg);
+        fflush(stdout);
+    }
+}
+#else
+typedef double CSP_time_t;
+#define CSP_time_init() do {} while (0)
+#define CSP_time PMPI_Wtime
+#define CSP_time_diff(t1, t2) (t2 - t1)
+#define CSP_time_todouble(t) (t)
+#define CSP_time_acc(t1, t2, t3) do { *(t3) += (t2) - (t1); } while (0)
+#endif
+
+#include "profile.h"
+#include "rm.h"
 
 /* ====================================================================== */
 

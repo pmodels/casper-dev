@@ -6,15 +6,12 @@
 #ifndef RM_H_
 #define RM_H_
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
 #ifdef CSP_ENABLE_RUNTIME_MONITOR
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "csp.h"
 
 typedef enum {
     CSP_RM_COMM_FREQ,
@@ -22,14 +19,15 @@ typedef enum {
 } CSP_rm_type;
 
 typedef struct {
-    double time;
-    double timer_sta;
-    double interval_sta;
+    CSP_time_t time;
+    CSP_time_t timer_sta;
+    CSP_time_t interval_sta;
 
     /* for debug use */
     double last_time;
     double last_interval;
     int last_freq;
+    int reported_flag;
 } CSP_rm;
 
 /* local runtime monitor */
@@ -37,20 +35,19 @@ extern CSP_rm CSP_RM[CSP_RM_MAX_TYPE];
 
 static inline void CSP_rm_count_start(CSP_rm_type type)
 {
-    CSP_RM[type].timer_sta = PMPI_Wtime();
+    CSP_RM[type].timer_sta = CSP_time();
 }
 
 static inline void CSP_rm_count_end(CSP_rm_type type)
 {
-    CSP_RM[type].time += PMPI_Wtime() - CSP_RM[type].timer_sta;
+    CSP_time_t now = CSP_time();
+    CSP_time_acc(CSP_RM[type].timer_sta, now, &CSP_RM[type].time);
 }
 
 static inline void CSP_rm_reset(CSP_rm_type type)
 {
-    double now = PMPI_Wtime();
-
     CSP_RM[type].time = 0;
-    CSP_RM[type].interval_sta = now;
+    CSP_RM[type].interval_sta = CSP_time();
 }
 
 static inline void CSP_rm_reset_all()

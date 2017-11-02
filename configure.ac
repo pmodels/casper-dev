@@ -72,6 +72,41 @@ if test "$enable_epochstat_check" = "yes"; then
    AC_DEFINE(CSP_ENABLE_EPOCH_STAT_CHECK,1,[Define if disable epoch status check])
 fi
 
+# External MPL
+AC_ARG_WITH(mpl, [AC_HELP_STRING([--with-mpl[=DIR]],
+                [Use the selected MPL installation; Header file mpl_timer.h should be in 
+                dir/include, and libmpl should be in dir/lib. Also see option
+                --with-timer])],,with_mpl=no)
+# Timer method
+AC_ARG_WITH([timer],
+[  --with-timer=mpl|mpi
+                Select the timer to use for internal timestamps.
+                mpi - MPI_Wtime (default)
+                mpl - MPL timer, user may select faster timer implementation at 
+                      MPL installing time. (see option --with-mpl).
+],,with_timer=mpi)
+AC_MSG_CHECKING(Timer type used for internal timestamps)
+AC_MSG_RESULT($with_timer)
+
+case $with_timer in
+    mpl)
+        if test "$with_mpl" = "no" ; then
+            AC_MSG_ERROR([unable to find mpl library.])
+        fi
+
+        CFLAGS="$CFLAGS -I$with_mpl/include"
+        LDFLAGS="$LDFLAGS -L$with_mpl/lib"
+        LIBS="$LIBS -lmpl"
+        AC_CHECK_HEADERS(mpl.h)
+        AC_CHECK_LIB([mpl],[MPL_wtime_init],have_mpl=yes,AC_MSG_ERROR([unable to find mpl library.]))
+
+        AC_DEFINE([CSP_MPL_TIMER],[1],[defined if the MPL timer is enabled])
+    ;;
+    *)
+        # do nothing
+    ;;
+esac
+
 # check for attribute support
 PAC_C_GNU_ATTRIBUTE
 

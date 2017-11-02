@@ -50,7 +50,7 @@ static MPI_Comm GADPT_LNTF_COMM = MPI_COMM_NULL;        /* all local users and t
 static MPI_Comm GADPT_GSYNC_COMM = MPI_COMM_NULL;       /* all gsync ghost processes. */
 static int GADPT_LNTF_GHOST_RANK = 0;
 
-static double gadpt_gsync_interval_sta = 0.0;
+static CSP_time_t gadpt_gsync_interval_sta = 0.0;
 
 /* parameters for local reset notification */
 static CSP_gadpt_reset_lnotify_pkt_t reset_pkt = { CSP_GADPT_LNOTIFY_NONE };
@@ -115,10 +115,11 @@ static inline int gadpt_atomic_store_l2_cache(void)
 
 static inline void gadpt_gsync_reset(void)
 {
-    double now = 0.0;
+    CSP_time_t now;
 
-    now = PMPI_Wtime();
-    CSPG_ADAPT_DBG_PRINT(">>> CSPG_gadpt_gsync_reset: %.4lf(s)\n", now - gadpt_gsync_interval_sta);
+    now = CSP_time();
+    CSPG_ADAPT_DBG_PRINT(">>> CSPG_gadpt_gsync_reset: %.4lf(s)\n",
+                         CSP_time_diff(gadpt_gsync_interval_sta, now));
 
     gadpt_gsync_interval_sta = now;
 }
@@ -492,7 +493,7 @@ static int gadpt_gsync_init()
     }
 #endif
 
-    gadpt_gsync_interval_sta = PMPI_Wtime();
+    gadpt_gsync_interval_sta = CSP_time();
 
   fn_exit:
     if (reqs)
@@ -703,7 +704,7 @@ int CSPG_gadpt_sync(void)
 {
     int mpi_errno = MPI_SUCCESS;
     int local_rank = 0;
-    double now = 0.0;
+    CSP_time_t now = 0.0;
 
     PMPI_Comm_rank(CSP_COMM_LOCAL, &local_rank);
     if (CSP_ENV.async_sched_level < CSP_ASYNC_SCHED_ANYTIME || local_rank > 0)
@@ -713,8 +714,8 @@ int CSPG_gadpt_sync(void)
     gadpt_lnotify_progress();
 
     /* only issue synchronization if interval is large enough. */
-    now = PMPI_Wtime();
-    if ((now - gadpt_gsync_interval_sta - CSP_ENV.gadpt_gsync_interval) < 0)
+    now = CSP_time();
+    if (CSP_time_diff(gadpt_gsync_interval_sta, now) - CSP_ENV.gadpt_gsync_interval < 0)
         goto fn_exit;
 
     /* if not ready for next issue, return */

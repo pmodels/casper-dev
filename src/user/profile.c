@@ -24,7 +24,7 @@ const char *CSP_profile_func_names[PROF_MAX_NUM_PROFILE_FUNC] = {
 };
 
 int CSP_prof_counters[PROF_MAX_NUM_PROFILE_FUNC];
-double CSP_prof_timings[PROF_MAX_NUM_PROFILE_FUNC];
+CSP_time_t CSP_prof_timings[PROF_MAX_NUM_PROFILE_FUNC];
 
 void CSP_profile_init(void)
 {
@@ -34,7 +34,7 @@ void CSP_profile_init(void)
     for (i = 0; i < PROF_MAX_NUM_PROFILE_FUNC; i++)
         CSP_prof_counters[i] = 0;
     for (i = 0; i < PROF_MAX_NUM_PROFILE_FUNC; i++)
-        CSP_prof_timings[i] = 0.0;
+        CSP_prof_timings[i] = 0;
 
     if (rank == 0) {
         fprintf(stderr, "CSP PROFILE initialized\n");
@@ -71,18 +71,22 @@ void CSP_profile_reset_timing(void)
     }
 
     for (i = 0; i < PROF_MAX_NUM_PROFILE_FUNC; i++)
-        CSP_prof_timings[i] = 0.0;
+        CSP_prof_timings[i] = 0;
 }
 
 void CSP_profile_print_timing(char *name)
 {
     int i, rank, size;
     double timers_avg[PROF_MAX_NUM_PROFILE_FUNC];
+    double timers_double[PROF_MAX_NUM_PROFILE_FUNC];
 
     PMPI_Comm_rank(CSP_COMM_USER_WORLD, &rank);
     PMPI_Comm_size(CSP_COMM_USER_WORLD, &size);
 
-    PMPI_Reduce(CSP_prof_timings, timers_avg, PROF_MAX_NUM_PROFILE_FUNC, MPI_DOUBLE, MPI_SUM, 0,
+    for (i = 0; i < PROF_MAX_NUM_PROFILE_FUNC; i++)
+        timers_double[i] = CSP_time_todouble(CSP_prof_timings[i]);
+
+    PMPI_Reduce(timers_double, timers_avg, PROF_MAX_NUM_PROFILE_FUNC, MPI_DOUBLE, MPI_SUM, 0,
                 CSP_COMM_USER_WORLD);
 
     if (rank == 0) {

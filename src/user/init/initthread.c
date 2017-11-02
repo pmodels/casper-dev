@@ -42,7 +42,7 @@ FILE *CSP_global_verbose_fp = NULL;
 
 #ifdef CSP_ENABLE_RUNTIME_MONITOR
 /* local runtime monitor */
-CSP_rm CSP_RM[CSP_RM_MAX_TYPE];
+CSP_rm CSP_RM[CSP_RM_MAX_TYPE] = {0};
 #endif
 
 static int CSP_initialize_env()
@@ -329,6 +329,8 @@ int MPI_Init_thread(int *argc, char ***argv, int required, int *provided)
     PMPI_Comm_size(MPI_COMM_WORLD, &nprocs);
     PMPI_Comm_rank(MPI_COMM_WORLD, &rank);
     CSP_MY_RANK_IN_WORLD = rank;
+
+    CSP_time_init();
 
     mpi_errno = CSP_initialize_env();
     if (mpi_errno != MPI_SUCCESS)
